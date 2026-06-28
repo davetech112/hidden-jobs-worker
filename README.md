@@ -8,7 +8,68 @@ Python Worker -> Spring Boot Internal Ingestion API -> Neon PostgreSQL
 
 ## Current Status
 
-This repository currently contains project documentation and AI agent instructions only. Worker implementation has not started.
+This repository contains the initial Python worker foundation:
+
+- Typed configuration loading from environment variables.
+- Structured logging setup with sensitive header redaction helpers.
+- Pydantic models for the ingestion contract.
+- Spring Boot ingestion client for `POST /api/internal/jobs/ingest`.
+- Source adapter interface and a Remotive adapter.
+- CLI command for manually running one source.
+- Unit tests and GitHub Actions CI for Ruff and Pytest.
+
+Scheduling, deployment, browser automation, and additional source adapters are intentionally out of scope for this foundation.
+
+## Setup
+
+Use Python 3.12 or 3.13.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+cp .env.example .env
+```
+
+Set runtime values in `.env` or your execution environment:
+
+```bash
+SPRING_API_BASE_URL=https://api.example.com
+WORKER_INGEST_TOKEN=replace-with-runtime-secret
+```
+
+Do not commit `.env` files or real token values.
+
+## Manual Source Run
+
+Fetch and parse Remotive jobs without sending them to the ingestion API:
+
+```bash
+hidden-jobs-worker run-source remotive --dry-run
+```
+
+Fetch Remotive jobs and submit bounded batches to Spring Boot:
+
+```bash
+hidden-jobs-worker run-source remotive
+```
+
+The worker sends normalized job batches to:
+
+```text
+POST {SPRING_API_BASE_URL}/api/internal/jobs/ingest
+```
+
+Authentication uses the `X-Worker-Token` header populated from `WORKER_INGEST_TOKEN`.
+
+## Checks
+
+```bash
+ruff check .
+pytest
+git diff --check
+```
 
 ## Documentation
 
