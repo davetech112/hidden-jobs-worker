@@ -3,7 +3,7 @@ import logging
 from collections.abc import Sequence
 
 from hidden_jobs_worker.adapters.remotive import RemotiveAdapter
-from hidden_jobs_worker.config import get_settings
+from hidden_jobs_worker.config import get_settings, get_source_run_settings
 from hidden_jobs_worker.ingestion import IngestionClient, batch_jobs
 from hidden_jobs_worker.logging import configure_logging
 from hidden_jobs_worker.models import IngestionPayload, WorkerInfo, build_run_id
@@ -24,7 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    settings = get_settings()
+    settings = get_source_run_settings()
     configure_logging(settings.worker_log_level)
 
     if args.command == "run-source":
@@ -33,10 +33,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _run_source(source: str, dry_run: bool) -> int:
-    settings = get_settings()
+    source_settings = get_source_run_settings()
     adapter = RemotiveAdapter(
-        api_url=settings.remotive_api_url,
-        timeout_seconds=settings.worker_request_timeout_seconds,
+        api_url=source_settings.remotive_api_url,
+        timeout_seconds=source_settings.worker_request_timeout_seconds,
     )
     jobs = adapter.fetch_jobs()
     run_id = build_run_id(adapter.metadata.key)
@@ -48,6 +48,7 @@ def _run_source(source: str, dry_run: bool) -> int:
     if dry_run:
         return 0
 
+    settings = get_settings()
     client = IngestionClient(settings)
     for job_batch in batch_jobs(jobs, settings.worker_batch_size):
         payload = IngestionPayload(

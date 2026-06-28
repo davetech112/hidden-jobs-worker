@@ -6,13 +6,20 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    """Runtime configuration loaded from environment variables."""
+def _validate_http_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("must be an absolute HTTP(S) URL")
+    if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("HTTP is only allowed for local development hosts")
+    return value.rstrip("/")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    spring_api_base_url: str = Field(alias="SPRING_API_BASE_URL")
-    worker_ingest_token: str = Field(alias="WORKER_INGEST_TOKEN", repr=False)
+class SourceRunSettings(BaseSettings):
+    """Runtime configuration for source-only operations."""
+
+    model_config = SettingsConfigDict(extra="ignore")
+
     worker_name: str = Field(default="hidden-jobs-worker", alias="WORKER_NAME")
     worker_version: str = Field(default="0.1.0", alias="WORKER_VERSION")
     worker_log_level: str = Field(default="INFO", alias="WORKER_LOG_LEVEL")
@@ -25,15 +32,22 @@ class Settings(BaseSettings):
         default="https://remotive.com/api/remote-jobs", alias="REMOTIVE_API_URL"
     )
 
-    @field_validator("spring_api_base_url", "remotive_api_url")
+    @field_validator("remotive_api_url")
     @classmethod
     def validate_url(cls, value: str) -> str:
-        parsed = urlparse(value)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("must be an absolute HTTP(S) URL")
-        if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
-            raise ValueError("HTTP is only allowed for local development hosts")
-        return value.rstrip("/")
+        return _validate_http_url(value)
+
+
+class Settings(SourceRunSettings):
+    """Runtime configuration for ingestion operations."""
+
+    spring_api_base_url: str = Field(alias="SPRING_API_BASE_URL")
+    worker_ingest_token: str = Field(alias="WORKER_INGEST_TOKEN", repr=False)
+
+    @field_validator("spring_api_base_url")
+    @classmethod
+    def validate_ingestion_url(cls, value: str) -> str:
+        return _validate_http_url(value)
 
     @field_validator("worker_ingest_token")
     @classmethod
@@ -51,3 +65,8 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+@lru_cache
+def get_source_run_settings() -> SourceRunSettings:
+    return SourceRunSettings()

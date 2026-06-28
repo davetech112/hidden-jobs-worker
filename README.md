@@ -29,17 +29,16 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
-cp .env.example .env
 ```
 
-Set runtime values in `.env` or your execution environment:
+Use `.env.example` as a reference for required runtime variables, then provide values through your execution environment:
 
 ```bash
-SPRING_API_BASE_URL=https://api.example.com
-WORKER_INGEST_TOKEN=replace-with-runtime-secret
+export SPRING_API_BASE_URL=https://api.example.com
+export WORKER_INGEST_TOKEN=replace-with-runtime-secret
 ```
 
-Do not commit `.env` files or real token values.
+Do not commit `.env` files or real token values. The worker reads runtime configuration from environment variables.
 
 ## Manual Source Run
 

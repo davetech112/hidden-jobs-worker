@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from hidden_jobs_worker.config import Settings
+from hidden_jobs_worker.config import Settings, SourceRunSettings
 
 
 def test_settings_load_required_values() -> None:
@@ -30,3 +30,24 @@ def test_settings_allows_local_http_for_development() -> None:
     )
 
     assert settings.spring_api_base_url == "http://localhost:8080"
+
+
+def test_source_run_settings_do_not_require_ingestion_token() -> None:
+    settings = SourceRunSettings()
+
+    assert settings.remotive_api_url == "https://remotive.com/api/remote-jobs"
+
+
+def test_settings_ignore_dotenv_files(tmp_path, monkeypatch) -> None:
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(
+        "SPRING_API_BASE_URL=https://api.example.com\n"
+        "WORKER_INGEST_TOKEN=dotenv-token\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("SPRING_API_BASE_URL", raising=False)
+    monkeypatch.delenv("WORKER_INGEST_TOKEN", raising=False)
+
+    with pytest.raises(ValidationError):
+        Settings()
