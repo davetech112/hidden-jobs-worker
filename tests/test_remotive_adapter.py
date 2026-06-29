@@ -34,6 +34,10 @@ def test_remotive_adapter_parses_jobs_payload() -> None:
     assert jobs[0].description_text == "Build APIs."
     assert jobs[0].tags == ["api", "python"]
 
+    serialized = jobs[0].model_dump(mode="json", by_alias=True)
+    assert serialized["remoteType"] == "REMOTE"
+    assert serialized["remoteType"] != "remote"
+
 
 def test_remotive_adapter_fetches_with_mocked_http_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:

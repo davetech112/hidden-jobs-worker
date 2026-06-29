@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -57,6 +59,9 @@ def test_ingestion_client_posts_contract_payload_and_token_header() -> None:
     assert str(seen_requests[0].url) == "https://api.example.com/api/internal/jobs/ingest"
     assert seen_requests[0].headers["X-Worker-Token"] == "test-token"
     assert seen_requests[0].headers["Content-Type"] == "application/json"
+    request_json = json.loads(seen_requests[0].content)
+    assert request_json["jobs"][0]["remoteType"] == "UNKNOWN"
+    assert request_json["jobs"][0]["employmentType"] == "UNKNOWN"
 
 
 def test_ingestion_client_retries_transient_status() -> None:

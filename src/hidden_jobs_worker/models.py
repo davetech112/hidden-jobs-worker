@@ -12,19 +12,30 @@ class SourceType(StrEnum):
 
 
 class RemoteType(StrEnum):
-    REMOTE = "remote"
-    HYBRID = "hybrid"
-    ONSITE = "onsite"
-    UNKNOWN = "unknown"
+    REMOTE = "REMOTE"
+    HYBRID = "HYBRID"
+    ONSITE = "ONSITE"
+    UNKNOWN = "UNKNOWN"
 
 
 class EmploymentType(StrEnum):
-    FULL_TIME = "full_time"
-    PART_TIME = "part_time"
-    CONTRACT = "contract"
-    INTERNSHIP = "internship"
-    TEMPORARY = "temporary"
-    UNKNOWN = "unknown"
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    CONTRACT = "CONTRACT"
+    INTERNSHIP = "INTERNSHIP"
+    TEMPORARY = "TEMPORARY"
+    UNKNOWN = "UNKNOWN"
+
+
+class ExperienceLevel(StrEnum):
+    ENTRY_LEVEL = "ENTRY_LEVEL"
+    MID_LEVEL = "MID_LEVEL"
+    SENIOR_LEVEL = "SENIOR_LEVEL"
+    LEAD = "LEAD"
+    STAFF = "STAFF"
+    PRINCIPAL = "PRINCIPAL"
+    EXECUTIVE = "EXECUTIVE"
+    UNKNOWN = "UNKNOWN"
 
 
 class Compensation(BaseModel):
@@ -48,6 +59,7 @@ class JobRecord(BaseModel):
     employment_type: EmploymentType | None = Field(
         default=EmploymentType.UNKNOWN, alias="employmentType"
     )
+    experience_level: ExperienceLevel | None = Field(default=None, alias="experienceLevel")
     description_text: str | None = Field(default=None, alias="descriptionText")
     description_html: str | None = Field(default=None, alias="descriptionHtml")
     posted_at: datetime | None = Field(default=None, alias="postedAt")
@@ -68,6 +80,21 @@ class JobRecord(BaseModel):
     @classmethod
     def normalize_tags(cls, value: list[str]) -> list[str]:
         return sorted({tag.strip().lower() for tag in value if tag.strip()})
+
+    @field_validator("remote_type", mode="before")
+    @classmethod
+    def normalize_remote_type(cls, value: object) -> object:
+        return _normalize_enum_value(value)
+
+    @field_validator("employment_type", mode="before")
+    @classmethod
+    def normalize_employment_type(cls, value: object) -> object:
+        return _normalize_enum_value(value)
+
+    @field_validator("experience_level", mode="before")
+    @classmethod
+    def normalize_experience_level(cls, value: object) -> object:
+        return _normalize_enum_value(value)
 
 
 class WorkerInfo(BaseModel):
@@ -125,3 +152,10 @@ class IngestionResult(BaseModel):
 def build_run_id(source_key: str, now: datetime | None = None) -> str:
     timestamp = (now or datetime.now(UTC)).replace(microsecond=0).isoformat()
     return f"{timestamp}-{source_key}"
+
+
+def _normalize_enum_value(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip().upper().replace("-", "_").replace(" ", "_")
+    return normalized or value

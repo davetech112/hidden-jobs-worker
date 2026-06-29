@@ -4,8 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from hidden_jobs_worker.models import (
+    EmploymentType,
+    ExperienceLevel,
     IngestionPayload,
     JobRecord,
+    RemoteType,
     SourceInfo,
     SourceType,
     WorkerInfo,
@@ -25,6 +28,26 @@ def test_job_record_serializes_contract_aliases() -> None:
     assert job.title == "Backend Engineer"
     assert job.tags == ["backend", "python"]
     assert job.model_dump(mode="json", by_alias=True)["sourceJobId"] == "123"
+
+
+def test_job_record_serializes_backend_enum_names() -> None:
+    job = JobRecord(
+        sourceUrl="https://example.com/jobs/123",
+        title="Backend Engineer",
+        companyName="Example Inc",
+        remoteType="remote",
+        employmentType="full-time",
+        experienceLevel="senior level",
+    )
+
+    serialized = job.model_dump(mode="json", by_alias=True)
+
+    assert job.remote_type == RemoteType.REMOTE
+    assert job.employment_type == EmploymentType.FULL_TIME
+    assert job.experience_level == ExperienceLevel.SENIOR_LEVEL
+    assert serialized["remoteType"] == "REMOTE"
+    assert serialized["employmentType"] == "FULL_TIME"
+    assert serialized["experienceLevel"] == "SENIOR_LEVEL"
 
 
 def test_ingestion_payload_requires_jobs() -> None:
