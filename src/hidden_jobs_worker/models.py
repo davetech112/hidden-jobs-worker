@@ -50,6 +50,7 @@ class Compensation(BaseModel):
 class JobRecord(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    source_name: str = Field(alias="sourceName")
     source_job_id: str | None = Field(default=None, alias="sourceJobId")
     source_url: HttpUrl = Field(alias="sourceUrl")
     title: str
@@ -75,6 +76,14 @@ class JobRecord(BaseModel):
         if not stripped:
             raise ValueError("must not be empty")
         return stripped
+
+    @field_validator("source_name")
+    @classmethod
+    def normalize_source_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be empty")
+        return stripped.upper()
 
     @field_validator("tags")
     @classmethod

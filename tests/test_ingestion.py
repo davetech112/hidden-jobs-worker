@@ -33,6 +33,7 @@ def _payload() -> IngestionPayload:
         ),
         jobs=[
             JobRecord(
+                sourceName="REMOTIVE",
                 sourceJobId="1",
                 sourceUrl="https://example.com/jobs/1",
                 title="Engineer",
@@ -60,6 +61,7 @@ def test_ingestion_client_posts_contract_payload_and_token_header() -> None:
     assert seen_requests[0].headers["X-Worker-Token"] == "test-token"
     assert seen_requests[0].headers["Content-Type"] == "application/json"
     request_json = json.loads(seen_requests[0].content)
+    assert request_json["jobs"][0]["sourceName"] == "REMOTIVE"
     assert request_json["jobs"][0]["remoteType"] == "UNKNOWN"
     assert request_json["jobs"][0]["employmentType"] == "UNKNOWN"
 

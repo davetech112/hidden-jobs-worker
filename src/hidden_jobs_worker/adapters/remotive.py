@@ -59,6 +59,7 @@ class RemotiveAdapter(SourceAdapter):
     def _parse_job(self, raw_job: dict[str, Any]) -> JobRecord:
         description_html = _optional_str(raw_job.get("description"))
         return JobRecord(
+            sourceName="REMOTIVE",
             sourceJobId=str(raw_job["id"]) if raw_job.get("id") is not None else None,
             sourceUrl=raw_job.get("url") or raw_job.get("job_url"),
             title=raw_job.get("title") or "",
