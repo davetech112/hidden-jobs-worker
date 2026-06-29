@@ -27,6 +27,7 @@ def test_remotive_adapter_parses_jobs_payload() -> None:
     )
 
     assert len(jobs) == 1
+    assert all(job.source_name == "REMOTIVE" for job in jobs)
     assert jobs[0].source_job_id == "42"
     assert jobs[0].company_name == "Example Inc"
     assert jobs[0].remote_type == RemoteType.REMOTE
@@ -35,6 +36,7 @@ def test_remotive_adapter_parses_jobs_payload() -> None:
     assert jobs[0].tags == ["api", "python"]
 
     serialized = jobs[0].model_dump(mode="json", by_alias=True)
+    assert serialized["sourceName"] == "REMOTIVE"
     assert serialized["remoteType"] == "REMOTE"
     assert serialized["remoteType"] != "remote"
 
