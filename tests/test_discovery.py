@@ -3,12 +3,25 @@ import httpx
 from hidden_jobs_worker import cli
 from hidden_jobs_worker.discovery.ats_detector import detect_ats
 from hidden_jobs_worker.discovery.board_verifier import BoardVerifier
-from hidden_jobs_worker.discovery.careers_finder import CareersPageFinder, find_careers_link
+from hidden_jobs_worker.discovery.careers_finder import (
+    CareersPage,
+    CareersPageFinder,
+    find_careers_link,
+)
+from hidden_jobs_worker.discovery.engine import CompanyDiscoveryEngine
+from hidden_jobs_worker.discovery.seeds import SeedCompany
 from hidden_jobs_worker.models import AtsType, CompanyCandidate
 
 
 def test_detects_greenhouse_url() -> None:
     detection = detect_ats("https://boards.greenhouse.io/example/jobs/123")
+
+    assert detection.ats_type == AtsType.GREENHOUSE
+    assert detection.ats_slug == "example"
+
+
+def test_detects_job_boards_greenhouse_url() -> None:
+    detection = detect_ats("https://job-boards.greenhouse.io/example/jobs/123")
 
     assert detection.ats_type == AtsType.GREENHOUSE
     assert detection.ats_slug == "example"
@@ -34,6 +47,31 @@ def test_detects_ats_from_html_link() -> None:
     detection = detect_ats(html=html)
 
     assert detection.ats_type == AtsType.LEVER
+    assert detection.ats_slug == "example"
+
+
+def test_detects_ats_from_script_and_link_urls_in_html() -> None:
+    html = """
+    <html>
+      <head>
+        <link rel="preconnect" href="https://jobs.ashbyhq.com">
+        <script src="https://jobs.ashbyhq.com/example/embed.js"></script>
+      </head>
+    </html>
+    """
+
+    detection = detect_ats(html=html)
+
+    assert detection.ats_type == AtsType.ASHBY
+    assert detection.ats_slug == "example"
+
+
+def test_detects_ats_from_raw_embedded_url_in_html() -> None:
+    html = '<script>window.jobsUrl = "https://apply.workable.com/example/";</script>'
+
+    detection = detect_ats(html=html)
+
+    assert detection.ats_type == AtsType.WORKABLE
     assert detection.ats_slug == "example"
 
 
@@ -67,6 +105,55 @@ def test_board_verification_success_and_failure_with_mocked_responses() -> None:
 
     assert verifier.verify(AtsType.GREENHOUSE, "valid")
     assert not verifier.verify(AtsType.GREENHOUSE, "missing")
+
+
+def test_discovery_engine_detects_ats_from_careers_page_html() -> None:
+    class FakeCareersFinder:
+        def find_page(self, website_url: str) -> CareersPage:
+            return CareersPage(
+                url="https://example.com/careers",
+                html='<a href="https://jobs.smartrecruiters.com/example">Open roles</a>',
+            )
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            return ats_type == AtsType.SMARTRECRUITERS and ats_slug == "example"
+
+    engine = CompanyDiscoveryEngine(
+        careers_finder=FakeCareersFinder(),
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidate = engine.discover_company(
+        SeedCompany(name="Example", websiteUrl="https://example.com")
+    )
+
+    assert candidate.ats_type == AtsType.SMARTRECRUITERS
+    assert candidate.ats_slug == "example"
+    assert candidate.confidence_score == 0.95
+
+
+def test_discovery_engine_detects_ats_from_final_careers_url() -> None:
+    class FakeCareersFinder:
+        def find_page(self, website_url: str) -> CareersPage:
+            return CareersPage(url="https://jobs.lever.co/example", html="")
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            return ats_type == AtsType.LEVER and ats_slug == "example"
+
+    engine = CompanyDiscoveryEngine(
+        careers_finder=FakeCareersFinder(),
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidate = engine.discover_company(
+        SeedCompany(name="Example", websiteUrl="https://example.com")
+    )
+
+    assert candidate.ats_type == AtsType.LEVER
+    assert candidate.ats_slug == "example"
+    assert candidate.confidence_score == 0.95
 
 
 def test_discovery_cli_dry_run(monkeypatch, tmp_path, capsys) -> None:

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
@@ -5,6 +6,12 @@ import httpx
 
 CAREERS_PATHS = ("/careers", "/jobs", "/join-us", "/company/careers", "/about/careers")
 CAREERS_TERMS = ("careers", "jobs", "join us", "open roles", "work with us")
+
+
+@dataclass(frozen=True)
+class CareersPage:
+    url: str
+    html: str
 
 
 class _Anchor:
@@ -44,10 +51,15 @@ class CareersPageFinder:
         self._client = client or httpx.Client(timeout=timeout_seconds, follow_redirects=True)
 
     def find(self, website_url: str) -> str | None:
+        page = self.find_page(website_url)
+        return page.url if page else None
+
+    def find_page(self, website_url: str) -> CareersPage | None:
         for path in CAREERS_PATHS:
             candidate_url = urljoin(_normalized_base_url(website_url), path)
-            if self._is_reachable(candidate_url):
-                return candidate_url
+            page = self._fetch_reachable(candidate_url)
+            if page:
+                return page
 
         try:
             response = self._client.get(website_url)
@@ -55,14 +67,22 @@ class CareersPageFinder:
         except httpx.HTTPError:
             return None
 
-        return find_careers_link(website_url, response.text)
+        careers_url = find_careers_link(str(response.url), response.text)
+        if not careers_url:
+            return None
+        return self._fetch_reachable(careers_url) or CareersPage(careers_url, "")
 
     def _is_reachable(self, url: str) -> bool:
+        return self._fetch_reachable(url) is not None
+
+    def _fetch_reachable(self, url: str) -> CareersPage | None:
         try:
             response = self._client.get(url)
         except httpx.HTTPError:
-            return False
-        return 200 <= response.status_code < 400
+            return None
+        if 200 <= response.status_code < 400:
+            return CareersPage(str(response.url), response.text)
+        return None
 
 
 def find_careers_link(base_url: str, html: str) -> str | None:

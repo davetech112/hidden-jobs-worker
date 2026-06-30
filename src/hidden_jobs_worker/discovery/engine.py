@@ -31,13 +31,17 @@ class CompanyDiscoveryEngine:
     def discover_company(self, seed: SeedCompany) -> CompanyCandidate:
         notes: list[str] = []
         website_url = str(seed.website_url)
-        careers_url = self._careers_finder.find(website_url)
+        careers_page = self._careers_finder.find_page(website_url)
+        careers_url = careers_page.url if careers_page else None
         if careers_url:
             notes.append(f"Careers page candidate found: {careers_url}")
         else:
             notes.append("No careers page candidate found")
 
-        detection = detect_ats(careers_url or website_url)
+        detection = detect_ats(
+            careers_url or website_url,
+            careers_page.html if careers_page else None,
+        )
         notes.append(f"ATS detection: {detection.ats_type}")
 
         verified = self._board_verifier.verify(detection.ats_type, detection.ats_slug)
