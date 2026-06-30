@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from hidden_jobs_worker.adapters.ats import AtsAdapter
 from hidden_jobs_worker.adapters.manager import AtsAdapterManager
 from hidden_jobs_worker.config import Settings
-from hidden_jobs_worker.ingestion import IngestionClient, batch_jobs
+from hidden_jobs_worker.ingestion import IngestionClient
 from hidden_jobs_worker.models import (
     CompanyRecord,
     IngestionPayload,
@@ -63,7 +63,11 @@ def run_due_companies(
             continue
 
         attempted += 1
+        company_ingested = 0
         try:
+            if not dry_run:
+                ingestion.start_crawl(company.id)
+
             jobs = adapter.fetch_jobs(company)
             discovered += len(jobs)
             LOGGER.info(
@@ -79,13 +83,36 @@ def run_due_companies(
 
             if not dry_run and jobs:
                 run_id = build_run_id(f"{company.ats_type.lower()}-{company.id}")
-                for job_batch in batch_jobs(jobs, settings.worker_batch_size):
-                    payload = _build_company_payload(settings, company, run_id, job_batch, adapter)
-                    ingestion.submit(payload)
-                    submitted += len(job_batch)
+                payload = _build_company_payload(settings, company, run_id, jobs, adapter)
+                ingestion_result = ingestion.submit_batches(
+                    payload,
+                    settings.worker_ingest_batch_size,
+                )
+                company_ingested = ingestion_result.saved
+                submitted += company_ingested
+                if ingestion_result.has_failures:
+                    raise RuntimeError(
+                        "one or more ingestion batches failed: "
+                        + "; ".join(ingestion_result.errors)
+                    )
+
+            if not dry_run:
+                ingestion.mark_crawl_success(
+                    company.id,
+                    jobs_found=len(jobs),
+                    jobs_ingested=company_ingested,
+                )
             succeeded += 1
-        except Exception:
+        except Exception as exc:
             failed += 1
+            if not dry_run:
+                try:
+                    ingestion.mark_crawl_failure(company.id, str(exc))
+                except Exception:
+                    LOGGER.exception(
+                        "company crawl failure reporting failed",
+                        extra={"company_id": company.id, "company_name": company.name},
+                    )
             LOGGER.exception(
                 "company crawl failed",
                 extra={"company_id": company.id, "company_name": company.name},

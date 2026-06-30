@@ -202,7 +202,36 @@ class IngestionResult(BaseModel):
     accepted: int = 0
     rejected: int = 0
     duplicates: int = 0
+    received: int = 0
+    saved: int = 0
+    duplicates_skipped: int = Field(default=0, alias="duplicatesSkipped")
+    failed: int = 0
+    errors: list[str] = Field(default_factory=list)
     items: list[IngestionItemResult] = Field(default_factory=list)
+
+    @property
+    def saved_count(self) -> int:
+        return self.saved or self.accepted
+
+    @property
+    def duplicate_count(self) -> int:
+        return self.duplicates_skipped or self.duplicates
+
+    @property
+    def failed_count(self) -> int:
+        return self.failed or self.rejected
+
+
+class BatchIngestionResult(BaseModel):
+    received: int = 0
+    saved: int = 0
+    duplicates_skipped: int = Field(default=0, alias="duplicatesSkipped")
+    failed: int = 0
+    errors: list[str] = Field(default_factory=list)
+
+    @property
+    def has_failures(self) -> bool:
+        return self.failed > 0 or bool(self.errors)
 
 
 def build_run_id(source_key: str, now: datetime | None = None) -> str:

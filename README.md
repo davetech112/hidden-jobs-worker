@@ -15,6 +15,7 @@ This repository contains the initial Python worker foundation:
 - Pydantic models for the ingestion contract.
 - Spring Boot ingestion client for `POST /api/internal/jobs/ingest`.
 - Company registry client for due-company crawls.
+- Batch-safe ingestion with crawl lifecycle reporting for due-company runs.
 - Source adapter interface, Remotive adapter, Greenhouse adapter, and Lever adapter.
 - CLI command for manually running one source.
 - Unit tests and GitHub Actions CI for Ruff and Pytest.
@@ -37,6 +38,7 @@ Use `.env.example` as a reference for required runtime variables, then provide v
 ```bash
 export SPRING_API_BASE_URL=https://api.example.com
 export WORKER_INGEST_TOKEN=replace-with-runtime-secret
+export WORKER_INGEST_BATCH_SIZE=25
 ```
 
 Do not commit `.env` files or real token values. The worker reads runtime configuration from environment variables.
@@ -74,6 +76,17 @@ POST {SPRING_API_BASE_URL}/api/internal/jobs/ingest
 ```
 
 Authentication uses the `X-Worker-Token` header populated from `WORKER_INGEST_TOKEN`.
+Batch size is controlled by `WORKER_INGEST_BATCH_SIZE` and defaults to `25`.
+
+Due-company runs also report crawl lifecycle state to Spring Boot:
+
+```text
+POST {SPRING_API_BASE_URL}/api/internal/companies/{companyId}/crawl/start
+POST {SPRING_API_BASE_URL}/api/internal/companies/{companyId}/crawl/success
+POST {SPRING_API_BASE_URL}/api/internal/companies/{companyId}/crawl/failure
+```
+
+Dry-run due-company runs fetch and count jobs without ingestion or lifecycle mutation.
 
 ## Checks
 
