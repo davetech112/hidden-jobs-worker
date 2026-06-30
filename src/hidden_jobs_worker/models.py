@@ -11,6 +11,15 @@ class SourceType(StrEnum):
     REMOTE_JOB_SOURCE = "remote_job_source"
 
 
+class AtsType(StrEnum):
+    GREENHOUSE = "GREENHOUSE"
+    LEVER = "LEVER"
+    ASHBY = "ASHBY"
+    WORKABLE = "WORKABLE"
+    CUSTOM = "CUSTOM"
+    UNKNOWN = "UNKNOWN"
+
+
 class RemoteType(StrEnum):
     REMOTE = "REMOTE"
     HYBRID = "HYBRID"
@@ -45,6 +54,44 @@ class Compensation(BaseModel):
     max_amount: float | None = Field(default=None, alias="maxAmount")
     currency: str | None = None
     interval: str | None = None
+
+
+class CompanyRecord(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    name: str
+    normalized_name: str | None = Field(default=None, alias="normalizedName")
+    website_url: HttpUrl | None = Field(default=None, alias="websiteUrl")
+    careers_url: HttpUrl | None = Field(default=None, alias="careersUrl")
+    ats_type: AtsType = Field(alias="atsType")
+    ats_slug: str | None = Field(default=None, alias="atsSlug")
+    industry: str | None = None
+    country: str | None = None
+    enabled: bool = True
+    crawl_frequency_hours: int | None = Field(default=None, alias="crawlFrequencyHours")
+    last_crawled_at: datetime | None = Field(default=None, alias="lastCrawledAt")
+    last_success_at: datetime | None = Field(default=None, alias="lastSuccessAt")
+    crawl_status: str | None = Field(default=None, alias="crawlStatus")
+    last_error: str | None = Field(default=None, alias="lastError")
+
+    @field_validator("ats_type", mode="before")
+    @classmethod
+    def normalize_ats_type(cls, value: object) -> object:
+        return _normalize_enum_value(value)
+
+    @field_validator("ats_slug")
+    @classmethod
+    def normalize_ats_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class CompanyRegistryResult(BaseModel):
+    data: list[CompanyRecord]
+    message: str | None = None
 
 
 class JobRecord(BaseModel):
