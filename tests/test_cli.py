@@ -1,6 +1,7 @@
 import httpx
 
 from hidden_jobs_worker import cli
+from hidden_jobs_worker.runner import DueCompanyRunResult
 
 
 def test_cli_dry_run_does_not_require_ingestion_token(monkeypatch) -> None:
@@ -38,3 +39,20 @@ def test_cli_dry_run_does_not_require_ingestion_token(monkeypatch) -> None:
     monkeypatch.setattr(cli, "RemotiveAdapter", TestRemotiveAdapter)
 
     assert cli.main(["run-source", "remotive", "--dry-run"]) == 0
+
+
+def test_cli_run_due_companies_dry_run(monkeypatch) -> None:
+    seen_dry_run_values: list[bool] = []
+    monkeypatch.setenv("SPRING_API_BASE_URL", "https://api.example.com")
+    monkeypatch.setenv("WORKER_INGEST_TOKEN", "test-token")
+    cli.get_source_run_settings.cache_clear()
+    cli.get_settings.cache_clear()
+
+    def fake_run_due_companies(settings, dry_run: bool):
+        seen_dry_run_values.append(dry_run)
+        return DueCompanyRunResult(attempted=1, succeeded=1)
+
+    monkeypatch.setattr(cli, "run_due_companies", fake_run_due_companies)
+
+    assert cli.main(["run-due-companies", "--dry-run"]) == 0
+    assert seen_dry_run_values == [True]

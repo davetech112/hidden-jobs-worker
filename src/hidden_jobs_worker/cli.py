@@ -7,6 +7,7 @@ from hidden_jobs_worker.config import get_settings, get_source_run_settings
 from hidden_jobs_worker.ingestion import IngestionClient, batch_jobs
 from hidden_jobs_worker.logging import configure_logging
 from hidden_jobs_worker.models import IngestionPayload, WorkerInfo, build_run_id
+from hidden_jobs_worker.runner import run_due_companies
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,12 +24,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Fetch and parse without ingesting.",
     )
 
+    run_due_companies_command = subparsers.add_parser(
+        "run-due-companies",
+        help="Fetch due companies, crawl supported ATS boards, and ingest discovered jobs.",
+    )
+    run_due_companies_command.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Fetch and parse due companies without ingesting jobs.",
+    )
+
     args = parser.parse_args(argv)
     settings = get_source_run_settings()
     configure_logging(settings.worker_log_level)
 
     if args.command == "run-source":
         return _run_source(args.source, dry_run=args.dry_run)
+    if args.command == "run-due-companies":
+        settings = get_settings()
+        result = run_due_companies(settings, dry_run=args.dry_run)
+        LOGGER.info(
+            "due company run completed",
+            extra={
+                "attempted": result.attempted,
+                "succeeded": result.succeeded,
+                "failed": result.failed,
+                "skipped": result.skipped,
+                "discovered": result.discovered,
+                "submitted": result.submitted,
+                "dry_run": args.dry_run,
+            },
+        )
+        return 0
     return 1
 
 

@@ -14,11 +14,12 @@ This repository contains the initial Python worker foundation:
 - Structured logging setup with sensitive header redaction helpers.
 - Pydantic models for the ingestion contract.
 - Spring Boot ingestion client for `POST /api/internal/jobs/ingest`.
-- Source adapter interface and a Remotive adapter.
+- Company registry client for due-company crawls.
+- Source adapter interface, Remotive adapter, Greenhouse adapter, and Lever adapter.
 - CLI command for manually running one source.
 - Unit tests and GitHub Actions CI for Ruff and Pytest.
 
-Scheduling, deployment, browser automation, and additional source adapters are intentionally out of scope for this foundation.
+Scheduling, deployment, browser automation, and browser-only source adapters are intentionally out of scope for this foundation.
 
 ## Setup
 
@@ -52,6 +53,18 @@ Fetch Remotive jobs and submit bounded batches to Spring Boot:
 
 ```bash
 hidden-jobs-worker run-source remotive
+```
+
+Fetch due companies from Spring Boot, crawl supported ATS boards, and submit discovered jobs:
+
+```bash
+hidden-jobs-worker run-due-companies
+```
+
+Fetch and parse due companies without submitting jobs:
+
+```bash
+hidden-jobs-worker run-due-companies --dry-run
 ```
 
 The worker sends normalized job batches to:
