@@ -16,7 +16,19 @@ class BoardVerifier:
             )
         if ats_type == AtsType.LEVER:
             return self._is_reachable(f"https://api.lever.co/v0/postings/{ats_slug}?mode=json")
+        if ats_type == AtsType.ASHBY:
+            return self._is_any_reachable(
+                (
+                    f"https://api.ashbyhq.com/posting-api/job-board/{ats_slug}",
+                    f"https://jobs.ashbyhq.com/{ats_slug}",
+                )
+            )
+        if ats_type == AtsType.WORKABLE:
+            return self._is_reachable(f"https://apply.workable.com/{ats_slug}")
         return False
+
+    def _is_any_reachable(self, urls: tuple[str, ...]) -> bool:
+        return any(self._is_reachable(url) for url in urls)
 
     def _is_reachable(self, url: str) -> bool:
         try:
