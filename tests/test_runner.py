@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from hidden_jobs_worker.adapters.ats import AtsAdapter
 from hidden_jobs_worker.config import Settings
-from hidden_jobs_worker.models import AtsType, CompanyRecord, JobRecord
+from hidden_jobs_worker.models import AtsType, BatchIngestionResult, CompanyRecord, JobRecord
 from hidden_jobs_worker.runner import run_due_companies
 
 
@@ -47,9 +47,33 @@ class FakeRegistryClient:
 class FakeIngestionClient:
     def __init__(self) -> None:
         self.payloads = []
+        self.started = []
+        self.succeeded = []
+        self.failed = []
+        self.fail_submission_for_company_ids: set[str] = set()
+        self.batch_sizes = []
 
-    def submit(self, payload) -> None:
+    def submit_batches(self, payload, batch_size: int) -> BatchIngestionResult:
         self.payloads.append(payload)
+        self.batch_sizes.append(batch_size)
+        company_id = payload.jobs[0].source_job_id.split("-")[0]
+        if company_id in self.fail_submission_for_company_ids:
+            return BatchIngestionResult(
+                received=len(payload.jobs),
+                saved=0,
+                failed=len(payload.jobs),
+                errors=["backend unavailable"],
+            )
+        return BatchIngestionResult(received=len(payload.jobs), saved=len(payload.jobs))
+
+    def start_crawl(self, company_id: str) -> None:
+        self.started.append(company_id)
+
+    def mark_crawl_success(self, company_id: str, jobs_found: int, jobs_ingested: int) -> None:
+        self.succeeded.append((company_id, jobs_found, jobs_ingested))
+
+    def mark_crawl_failure(self, company_id: str, error_message: str) -> None:
+        self.failed.append((company_id, error_message))
 
 
 class FakeAtsAdapter(AtsAdapter):
@@ -91,6 +115,9 @@ def test_run_due_companies_dry_run_does_not_ingest() -> None:
     assert result.discovered == 1
     assert result.submitted == 0
     assert ingestion.payloads == []
+    assert ingestion.started == []
+    assert ingestion.succeeded == []
+    assert ingestion.failed == []
 
 
 def test_run_due_companies_one_failure_does_not_stop_others() -> None:
@@ -110,3 +137,47 @@ def test_run_due_companies_one_failure_does_not_stop_others() -> None:
     assert result.submitted == 1
     assert len(ingestion.payloads) == 1
     assert ingestion.payloads[0].jobs[0].company_name == "two Labs"
+    assert ingestion.started == ["failed", "two"]
+    assert ingestion.succeeded == [("two", 1, 1)]
+    assert len(ingestion.failed) == 1
+    assert ingestion.failed[0][0] == "failed"
+
+
+def test_run_due_companies_marks_success_with_found_and_ingested_counts() -> None:
+    ingestion = FakeIngestionClient()
+    result = run_due_companies(
+        _settings(),
+        registry_client=FakeRegistryClient([_company("one")]),
+        ingestion_client=ingestion,
+        adapter_manager=FakeAdapterManager(),
+    )
+
+    assert result.succeeded == 1
+    assert result.failed == 0
+    assert result.discovered == 1
+    assert result.submitted == 1
+    assert ingestion.started == ["one"]
+    assert ingestion.succeeded == [("one", 1, 1)]
+    assert ingestion.failed == []
+    assert ingestion.batch_sizes == [25]
+
+
+def test_run_due_companies_marks_ingestion_failure_and_continues() -> None:
+    ingestion = FakeIngestionClient()
+    ingestion.fail_submission_for_company_ids.add("one")
+    result = run_due_companies(
+        _settings(),
+        registry_client=FakeRegistryClient([_company("one"), _company("two")]),
+        ingestion_client=ingestion,
+        adapter_manager=FakeAdapterManager(),
+    )
+
+    assert result.attempted == 2
+    assert result.succeeded == 1
+    assert result.failed == 1
+    assert result.submitted == 1
+    assert ingestion.started == ["one", "two"]
+    assert ingestion.succeeded == [("two", 1, 1)]
+    assert len(ingestion.failed) == 1
+    assert ingestion.failed[0][0] == "one"
+    assert "ingestion batches failed" in ingestion.failed[0][1]

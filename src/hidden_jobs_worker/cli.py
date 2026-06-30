@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from hidden_jobs_worker.adapters.remotive import RemotiveAdapter
 from hidden_jobs_worker.config import get_settings, get_source_run_settings
-from hidden_jobs_worker.ingestion import IngestionClient, batch_jobs
+from hidden_jobs_worker.ingestion import IngestionClient
 from hidden_jobs_worker.logging import configure_logging
 from hidden_jobs_worker.models import IngestionPayload, WorkerInfo, build_run_id
 from hidden_jobs_worker.runner import run_due_companies
@@ -74,29 +74,31 @@ def _run_source(source: str, dry_run: bool) -> int:
     )
     if dry_run:
         return 0
+    if not jobs:
+        return 0
 
     settings = get_settings()
     client = IngestionClient(settings)
-    for job_batch in batch_jobs(jobs, settings.worker_batch_size):
-        payload = IngestionPayload(
-            worker=WorkerInfo(
-                name=settings.worker_name,
-                version=settings.worker_version,
-                runId=run_id,
-            ),
-            source=adapter.metadata.to_source_info(),
-            jobs=job_batch,
-        )
-        result = client.submit(payload)
-        LOGGER.info(
-            "ingestion batch submitted",
-            extra={
-                "run_id": result.run_id,
-                "accepted": result.accepted,
-                "rejected": result.rejected,
-                "duplicates": result.duplicates,
-            },
-        )
+    payload = IngestionPayload(
+        worker=WorkerInfo(
+            name=settings.worker_name,
+            version=settings.worker_version,
+            runId=run_id,
+        ),
+        source=adapter.metadata.to_source_info(),
+        jobs=jobs,
+    )
+    result = client.submit_batches(payload, settings.worker_ingest_batch_size)
+    LOGGER.info(
+        "source ingestion completed",
+        extra={
+            "run_id": run_id,
+            "received": result.received,
+            "saved": result.saved,
+            "duplicates_skipped": result.duplicates_skipped,
+            "failed": result.failed,
+        },
+    )
     return 0
 
 

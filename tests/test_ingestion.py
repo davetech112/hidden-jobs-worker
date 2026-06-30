@@ -43,6 +43,21 @@ def _payload() -> IngestionPayload:
     )
 
 
+def _payload_with_jobs(count: int) -> IngestionPayload:
+    payload = _payload()
+    jobs = [
+        JobRecord(
+            sourceName="REMOTIVE",
+            sourceJobId=str(index),
+            sourceUrl=f"https://example.com/jobs/{index}",
+            title=f"Engineer {index}",
+            companyName="Example Inc",
+        )
+        for index in range(count)
+    ]
+    return payload.model_copy(update={"jobs": jobs})
+
+
 def test_ingestion_client_posts_contract_payload_and_token_header() -> None:
     seen_requests: list[httpx.Request] = []
 
@@ -93,3 +108,86 @@ def test_ingestion_client_classifies_auth_failure() -> None:
 
     with pytest.raises(IngestionAuthError):
         client.submit(_payload())
+
+
+def test_submit_batches_sends_sixty_jobs_as_three_batches() -> None:
+    batch_sizes: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        batch_sizes.append(len(body["jobs"]))
+        return httpx.Response(
+            200,
+            json={
+                "runId": body["worker"]["runId"],
+                "received": len(body["jobs"]),
+                "saved": len(body["jobs"]),
+                "duplicatesSkipped": 0,
+                "failed": 0,
+                "errors": [],
+            },
+        )
+
+    client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.submit_batches(_payload_with_jobs(60), batch_size=25)
+
+    assert batch_sizes == [25, 25, 10]
+    assert result.received == 60
+    assert result.saved == 60
+    assert result.failed == 0
+
+
+def test_submit_batches_records_failed_batch_and_continues() -> None:
+    batch_sizes: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        batch_sizes.append(len(body["jobs"]))
+        if body["jobs"][0]["sourceJobId"] == "25":
+            return httpx.Response(500, text="temporary failure")
+        return httpx.Response(
+            200,
+            json={
+                "runId": body["worker"]["runId"],
+                "received": len(body["jobs"]),
+                "saved": len(body["jobs"]),
+                "duplicatesSkipped": 0,
+                "failed": 0,
+                "errors": [],
+            },
+        )
+
+    client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.submit_batches(_payload_with_jobs(60), batch_size=25)
+
+    assert batch_sizes == [25, 25, 25, 10]
+    assert result.received == 60
+    assert result.saved == 35
+    assert result.failed == 25
+    assert result.has_failures
+    assert result.errors
+
+
+def test_crawl_lifecycle_calls_use_worker_token() -> None:
+    seen_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return httpx.Response(204)
+
+    client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+
+    client.start_crawl("company-1")
+    client.mark_crawl_success("company-1", jobs_found=12, jobs_ingested=10)
+    client.mark_crawl_failure("company-1", "source unavailable")
+
+    assert [request.url.path for request in seen_requests] == [
+        "/api/internal/companies/company-1/crawl/start",
+        "/api/internal/companies/company-1/crawl/success",
+        "/api/internal/companies/company-1/crawl/failure",
+    ]
+    assert all(request.headers["X-Worker-Token"] == "test-token" for request in seen_requests)
+    success_body = json.loads(seen_requests[1].content)
+    failure_body = json.loads(seen_requests[2].content)
+    assert success_body == {"jobsFound": 12, "jobsIngested": 10}
+    assert failure_body == {"errorMessage": "source unavailable"}

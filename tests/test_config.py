@@ -12,6 +12,7 @@ def test_settings_load_required_values() -> None:
 
     assert settings.spring_api_base_url == "https://api.example.com"
     assert settings.worker_ingest_token == "test-token"
+    assert settings.worker_ingest_batch_size == 25
     assert settings.redacted()["WORKER_INGEST_TOKEN"] == "***REDACTED***"
 
 
