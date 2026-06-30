@@ -58,7 +58,7 @@ def _payload_with_jobs(count: int) -> IngestionPayload:
     return payload.model_copy(update={"jobs": jobs})
 
 
-def test_ingestion_client_posts_contract_payload_and_token_header() -> None:
+def test_ingestion_client_parses_raw_response_and_posts_token_header() -> None:
     seen_requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -79,6 +79,33 @@ def test_ingestion_client_posts_contract_payload_and_token_header() -> None:
     assert request_json["jobs"][0]["sourceName"] == "REMOTIVE"
     assert request_json["jobs"][0]["remoteType"] == "UNKNOWN"
     assert request_json["jobs"][0]["employmentType"] == "UNKNOWN"
+
+
+def test_ingestion_client_parses_wrapped_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "runId": "run-1",
+                    "received": 1,
+                    "saved": 1,
+                    "duplicatesSkipped": 0,
+                    "failed": 0,
+                    "errors": [],
+                },
+                "message": "Jobs ingested successfully",
+                "timestamp": "2026-06-30T00:00:00Z",
+            },
+        )
+
+    client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.submit(_payload())
+
+    assert result.run_id == "run-1"
+    assert result.received == 1
+    assert result.saved_count == 1
 
 
 def test_ingestion_client_retries_transient_status() -> None:
@@ -119,12 +146,17 @@ def test_submit_batches_sends_sixty_jobs_as_three_batches() -> None:
         return httpx.Response(
             200,
             json={
-                "runId": body["worker"]["runId"],
-                "received": len(body["jobs"]),
-                "saved": len(body["jobs"]),
-                "duplicatesSkipped": 0,
-                "failed": 0,
-                "errors": [],
+                "success": True,
+                "data": {
+                    "runId": body["worker"]["runId"],
+                    "received": len(body["jobs"]),
+                    "saved": len(body["jobs"]),
+                    "duplicatesSkipped": 0,
+                    "failed": 0,
+                    "errors": [],
+                },
+                "message": "Jobs ingested successfully",
+                "timestamp": "2026-06-30T00:00:00Z",
             },
         )
 

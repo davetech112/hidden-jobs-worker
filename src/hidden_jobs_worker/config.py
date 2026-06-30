@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +24,13 @@ class SourceRunSettings(BaseSettings):
     worker_version: str = Field(default="0.1.0", alias="WORKER_VERSION")
     worker_log_level: str = Field(default="INFO", alias="WORKER_LOG_LEVEL")
     worker_request_timeout_seconds: float = Field(
-        default=15.0, alias="WORKER_REQUEST_TIMEOUT_SECONDS", gt=0
+        default=30.0,
+        alias="WORKER_HTTP_TIMEOUT_SECONDS",
+        validation_alias=AliasChoices(
+            "WORKER_HTTP_TIMEOUT_SECONDS",
+            "WORKER_REQUEST_TIMEOUT_SECONDS",
+        ),
+        gt=0,
     )
     worker_max_retries: int = Field(default=2, alias="WORKER_MAX_RETRIES", ge=0, le=5)
     worker_batch_size: int = Field(default=100, alias="WORKER_BATCH_SIZE", ge=1, le=500)
