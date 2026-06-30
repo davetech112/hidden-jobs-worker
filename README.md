@@ -69,6 +69,12 @@ Fetch and parse due companies without submitting jobs:
 hidden-jobs-worker run-due-companies --dry-run
 ```
 
+Discover company ATS metadata from a static seed file without registering candidates:
+
+```bash
+hidden-jobs-worker discover-companies --seed-file discovery/seeds/companies.yml --dry-run
+```
+
 The worker sends normalized job batches to:
 
 ```text

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from hidden_jobs_worker.adapters.remotive import RemotiveAdapter
 from hidden_jobs_worker.config import get_settings, get_source_run_settings
+from hidden_jobs_worker.discovery.engine import CompanyDiscoveryEngine
 from hidden_jobs_worker.ingestion import IngestionClient
 from hidden_jobs_worker.logging import configure_logging
 from hidden_jobs_worker.models import IngestionPayload, WorkerInfo, build_run_id
@@ -34,6 +35,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Fetch and parse due companies without ingesting jobs.",
     )
 
+    discover_companies = subparsers.add_parser(
+        "discover-companies",
+        help="Discover company ATS metadata from a static seed file.",
+    )
+    discover_companies.add_argument(
+        "--seed-file",
+        default="discovery/seeds/companies.yml",
+        help="Path to the static company seed file.",
+    )
+    discover_companies.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Discover candidates without submitting them to the backend.",
+    )
+    discover_companies.add_argument("--limit", type=int, default=None)
+
     args = parser.parse_args(argv)
     settings = get_source_run_settings()
     configure_logging(settings.worker_log_level)
@@ -55,6 +72,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "dry_run": args.dry_run,
             },
         )
+        return 0
+    if args.command == "discover-companies":
+        candidates = CompanyDiscoveryEngine().discover_from_seed_file(
+            seed_file=args.seed_file,
+            limit=args.limit,
+        )
+        verified_count = sum(1 for candidate in candidates if candidate.confidence_score >= 0.9)
+        print(
+            "company discovery completed: "
+            f"candidates={len(candidates)} verified={verified_count} dry_run={args.dry_run}"
+        )
+        for candidate in candidates:
+            print(
+                f"{candidate.name}: atsType={candidate.ats_type} "
+                f"atsSlug={candidate.ats_slug or '-'} "
+                f"confidence={candidate.confidence_score:.2f}"
+            )
+        if not args.dry_run:
+            LOGGER.info("backend company registration is not wired yet")
         return 0
     return 1
 

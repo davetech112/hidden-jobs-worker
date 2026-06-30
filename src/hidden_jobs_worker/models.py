@@ -16,6 +16,9 @@ class AtsType(StrEnum):
     LEVER = "LEVER"
     ASHBY = "ASHBY"
     WORKABLE = "WORKABLE"
+    SMARTRECRUITERS = "SMARTRECRUITERS"
+    TEAMTAILOR = "TEAMTAILOR"
+    RECRUITEE = "RECRUITEE"
     CUSTOM = "CUSTOM"
     UNKNOWN = "UNKNOWN"
 
@@ -92,6 +95,40 @@ class CompanyRecord(BaseModel):
 class CompanyRegistryResult(BaseModel):
     data: list[CompanyRecord]
     message: str | None = None
+
+
+class CompanyCandidate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    website_url: HttpUrl = Field(alias="websiteUrl")
+    careers_url: HttpUrl | None = Field(default=None, alias="careersUrl")
+    ats_type: AtsType = Field(default=AtsType.UNKNOWN, alias="atsType")
+    ats_slug: str | None = Field(default=None, alias="atsSlug")
+    source: str
+    confidence_score: float = Field(default=0.0, alias="confidenceScore", ge=0.0, le=1.0)
+    discovery_notes: list[str] = Field(default_factory=list, alias="discoveryNotes")
+
+    @field_validator("name", "source")
+    @classmethod
+    def require_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be empty")
+        return stripped
+
+    @field_validator("ats_type", mode="before")
+    @classmethod
+    def normalize_ats_type(cls, value: object) -> object:
+        return _normalize_enum_value(value)
+
+    @field_validator("ats_slug")
+    @classmethod
+    def normalize_ats_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().strip("/")
+        return stripped or None
 
 
 class JobRecord(BaseModel):
