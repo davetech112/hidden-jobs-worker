@@ -1,0 +1,20 @@
+- name: GitLab
+  websiteUrl: https://about.gitlab.com
+- name: Vercel
+  websiteUrl: https://vercel.com
+- name: PostHog
+  websiteUrl: https://posthog.com
+- name: Supabase
+  websiteUrl: https://supabase.com
+- name: Sentry
+  websiteUrl: https://sentry.io
+- name: Linear
+  websiteUrl: https://linear.app
+- name: Railway
+  websiteUrl: https://railway.com
+- name: Render
+  websiteUrl: https://render.com
+- name: Hugging Face
+  websiteUrl: https://huggingface.co
+- name: Grafana Labs
+  websiteUrl: https://grafana.com
