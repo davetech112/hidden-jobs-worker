@@ -31,7 +31,7 @@ class IngestionClient:
 
         if not response.content:
             return IngestionResult(runId=payload.worker.run_id)
-        return IngestionResult.model_validate(response.json())
+        return IngestionResult.model_validate(_unwrap_response_data(response.json()))
 
     def submit_batches(
         self,
@@ -146,3 +146,9 @@ def batch_jobs[T](items: Iterable[T], batch_size: int) -> Iterable[list[T]]:
             batch = []
     if batch:
         yield batch
+
+
+def _unwrap_response_data(response_body: object) -> object:
+    if isinstance(response_body, dict) and isinstance(response_body.get("data"), dict):
+        return response_body["data"]
+    return response_body

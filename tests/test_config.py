@@ -12,8 +12,29 @@ def test_settings_load_required_values() -> None:
 
     assert settings.spring_api_base_url == "https://api.example.com"
     assert settings.worker_ingest_token == "test-token"
+    assert settings.worker_request_timeout_seconds == 30
     assert settings.worker_ingest_batch_size == 25
     assert settings.redacted()["WORKER_INGEST_TOKEN"] == "***REDACTED***"
+
+
+def test_settings_read_http_timeout_env_var() -> None:
+    settings = Settings(
+        SPRING_API_BASE_URL="https://api.example.com/",
+        WORKER_INGEST_TOKEN="test-token",
+        WORKER_HTTP_TIMEOUT_SECONDS=45,
+    )
+
+    assert settings.worker_request_timeout_seconds == 45
+
+
+def test_settings_support_legacy_request_timeout_env_var() -> None:
+    settings = Settings(
+        SPRING_API_BASE_URL="https://api.example.com/",
+        WORKER_INGEST_TOKEN="test-token",
+        WORKER_REQUEST_TIMEOUT_SECONDS=20,
+    )
+
+    assert settings.worker_request_timeout_seconds == 20
 
 
 def test_settings_reject_non_local_http_ingestion_url() -> None:
