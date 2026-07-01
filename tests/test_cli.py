@@ -1,7 +1,7 @@
 import httpx
 
 from hidden_jobs_worker import cli
-from hidden_jobs_worker.runner import DueCompanyRunResult
+from hidden_jobs_worker.runner import DueCareerBoardRunResult
 
 
 def test_cli_dry_run_does_not_require_ingestion_token(monkeypatch) -> None:
@@ -41,18 +41,18 @@ def test_cli_dry_run_does_not_require_ingestion_token(monkeypatch) -> None:
     assert cli.main(["run-source", "remotive", "--dry-run"]) == 0
 
 
-def test_cli_run_due_companies_dry_run(monkeypatch) -> None:
+def test_cli_run_due_career_boards_dry_run(monkeypatch) -> None:
     seen_dry_run_values: list[bool] = []
     monkeypatch.setenv("SPRING_API_BASE_URL", "https://api.example.com")
     monkeypatch.setenv("WORKER_INGEST_TOKEN", "test-token")
     cli.get_source_run_settings.cache_clear()
     cli.get_settings.cache_clear()
 
-    def fake_run_due_companies(settings, dry_run: bool):
+    def fake_run_due_career_boards(settings, dry_run: bool):
         seen_dry_run_values.append(dry_run)
-        return DueCompanyRunResult(attempted=1, succeeded=1)
+        return DueCareerBoardRunResult(attempted=1, succeeded=1)
 
-    monkeypatch.setattr(cli, "run_due_companies", fake_run_due_companies)
+    monkeypatch.setattr(cli, "run_due_career_boards", fake_run_due_career_boards)
 
-    assert cli.main(["run-due-companies", "--dry-run"]) == 0
+    assert cli.main(["run-due-career-boards", "--dry-run"]) == 0
     assert seen_dry_run_values == [True]

@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 from hidden_jobs_worker.adapters.ats import AtsAdapter
 from hidden_jobs_worker.config import Settings
-from hidden_jobs_worker.models import AtsType, BatchIngestionResult, CompanyRecord, JobRecord
-from hidden_jobs_worker.runner import run_due_companies
+from hidden_jobs_worker.models import AtsType, BatchIngestionResult, CareerBoard, JobRecord
+from hidden_jobs_worker.runner import run_due_career_boards
 
 
 def _settings() -> Settings:
@@ -14,34 +14,37 @@ def _settings() -> Settings:
     )
 
 
-def _company(id_value: str, ats_type: str = "GREENHOUSE") -> CompanyRecord:
-    return CompanyRecord(
-        id=id_value,
-        name=f"{id_value} Labs",
+def _career_board(id_value: str, ats_type: str = "GREENHOUSE") -> CareerBoard:
+    return CareerBoard(
+        boardId=id_value,
+        boardUrl=f"https://boards.example.com/{id_value}",
+        companyId=f"{id_value}-company",
+        companyName=f"{id_value} Labs",
         websiteUrl="https://example.com",
         careersUrl="https://example.com/careers",
         atsType=ats_type,
         atsSlug=id_value,
-        enabled=True,
+        confidenceScore=0.95,
+        failureCount=0,
     )
 
 
-def _job(company: CompanyRecord) -> JobRecord:
+def _job(career_board: CareerBoard) -> JobRecord:
     return JobRecord(
-        sourceName=company.ats_type,
-        sourceJobId=f"{company.id}-job",
-        sourceUrl=f"https://example.com/jobs/{company.id}",
+        sourceName=career_board.ats_type,
+        sourceJobId=f"{career_board.board_id}-job",
+        sourceUrl=f"https://example.com/jobs/{career_board.board_id}",
         title="Engineer",
-        companyName=company.name,
+        companyName=career_board.company_name,
     )
 
 
 @dataclass
 class FakeRegistryClient:
-    companies: list[CompanyRecord]
+    career_boards: list[CareerBoard]
 
-    def get_due_companies(self) -> list[CompanyRecord]:
-        return self.companies
+    def get_due_career_boards(self) -> list[CareerBoard]:
+        return self.career_boards
 
 
 class FakeIngestionClient:
@@ -50,14 +53,14 @@ class FakeIngestionClient:
         self.started = []
         self.succeeded = []
         self.failed = []
-        self.fail_submission_for_company_ids: set[str] = set()
+        self.fail_submission_for_board_ids: set[str] = set()
         self.batch_sizes = []
 
     def submit_batches(self, payload, batch_size: int) -> BatchIngestionResult:
         self.payloads.append(payload)
         self.batch_sizes.append(batch_size)
-        company_id = payload.jobs[0].source_job_id.split("-")[0]
-        if company_id in self.fail_submission_for_company_ids:
+        board_id = payload.jobs[0].source_job_id.removesuffix("-job")
+        if board_id in self.fail_submission_for_board_ids:
             return BatchIngestionResult(
                 received=len(payload.jobs),
                 saved=0,
@@ -66,14 +69,14 @@ class FakeIngestionClient:
             )
         return BatchIngestionResult(received=len(payload.jobs), saved=len(payload.jobs))
 
-    def start_crawl(self, company_id: str) -> None:
-        self.started.append(company_id)
+    def start_career_board_crawl(self, board_id: str) -> None:
+        self.started.append(board_id)
 
-    def mark_crawl_success(self, company_id: str, jobs_found: int, jobs_ingested: int) -> None:
-        self.succeeded.append((company_id, jobs_found, jobs_ingested))
+    def mark_career_board_crawl_success(self, board_id: str) -> None:
+        self.succeeded.append(board_id)
 
-    def mark_crawl_failure(self, company_id: str, error_message: str) -> None:
-        self.failed.append((company_id, error_message))
+    def mark_career_board_crawl_failure(self, board_id: str, error_message: str) -> None:
+        self.failed.append((board_id, error_message))
 
 
 class FakeAtsAdapter(AtsAdapter):
@@ -81,31 +84,33 @@ class FakeAtsAdapter(AtsAdapter):
     source_name = "GREENHOUSE"
     base_url = "https://example.com"
 
-    def fetch_jobs(self, company: CompanyRecord) -> list[JobRecord]:
-        if company.id == "failed":
+    def fetch_jobs(self, career_board: CareerBoard) -> list[JobRecord]:
+        if career_board.board_id == "failed":
             raise RuntimeError("source unavailable")
-        return [_job(company)]
+        return [_job(career_board)]
 
-    def parse_jobs(self, company: CompanyRecord, payload) -> list[JobRecord]:
+    def parse_jobs(self, career_board: CareerBoard, payload) -> list[JobRecord]:
         return []
 
 
 class FakeAdapterManager:
     def __init__(self) -> None:
         self.adapter = FakeAtsAdapter()
+        self.seen_boards = []
 
-    def get_adapter(self, company: CompanyRecord):
-        if company.ats_type == AtsType.GREENHOUSE:
+    def get_adapter(self, career_board: CareerBoard):
+        self.seen_boards.append(career_board)
+        if career_board.ats_type == AtsType.GREENHOUSE:
             return self.adapter
         return None
 
 
-def test_run_due_companies_dry_run_does_not_ingest() -> None:
+def test_run_due_career_boards_dry_run_does_not_ingest_or_mutate_lifecycle() -> None:
     ingestion = FakeIngestionClient()
-    result = run_due_companies(
+    result = run_due_career_boards(
         _settings(),
         dry_run=True,
-        registry_client=FakeRegistryClient([_company("one")]),
+        registry_client=FakeRegistryClient([_career_board("one")]),
         ingestion_client=ingestion,
         adapter_manager=FakeAdapterManager(),
     )
@@ -120,12 +125,27 @@ def test_run_due_companies_dry_run_does_not_ingest() -> None:
     assert ingestion.failed == []
 
 
-def test_run_due_companies_one_failure_does_not_stop_others() -> None:
-    ingestion = FakeIngestionClient()
-    companies = [_company("failed"), _company("two"), _company("custom", "CUSTOM")]
-    result = run_due_companies(
+def test_run_due_career_boards_dispatches_adapter_from_board_ats_type() -> None:
+    adapter_manager = FakeAdapterManager()
+    result = run_due_career_boards(
         _settings(),
-        registry_client=FakeRegistryClient(companies),
+        dry_run=True,
+        registry_client=FakeRegistryClient([_career_board("one", "GREENHOUSE")]),
+        ingestion_client=FakeIngestionClient(),
+        adapter_manager=adapter_manager,
+    )
+
+    assert result.succeeded == 1
+    assert adapter_manager.seen_boards[0].board_id == "one"
+    assert adapter_manager.seen_boards[0].ats_type == AtsType.GREENHOUSE
+
+
+def test_run_due_career_boards_one_failure_does_not_stop_others() -> None:
+    ingestion = FakeIngestionClient()
+    boards = [_career_board("failed"), _career_board("two"), _career_board("custom", "CUSTOM")]
+    result = run_due_career_boards(
+        _settings(),
+        registry_client=FakeRegistryClient(boards),
         ingestion_client=ingestion,
         adapter_manager=FakeAdapterManager(),
     )
@@ -138,16 +158,16 @@ def test_run_due_companies_one_failure_does_not_stop_others() -> None:
     assert len(ingestion.payloads) == 1
     assert ingestion.payloads[0].jobs[0].company_name == "two Labs"
     assert ingestion.started == ["failed", "two"]
-    assert ingestion.succeeded == [("two", 1, 1)]
+    assert ingestion.succeeded == ["two"]
     assert len(ingestion.failed) == 1
     assert ingestion.failed[0][0] == "failed"
 
 
-def test_run_due_companies_marks_success_with_found_and_ingested_counts() -> None:
+def test_run_due_career_boards_marks_success_and_batches() -> None:
     ingestion = FakeIngestionClient()
-    result = run_due_companies(
+    result = run_due_career_boards(
         _settings(),
-        registry_client=FakeRegistryClient([_company("one")]),
+        registry_client=FakeRegistryClient([_career_board("one")]),
         ingestion_client=ingestion,
         adapter_manager=FakeAdapterManager(),
     )
@@ -157,17 +177,17 @@ def test_run_due_companies_marks_success_with_found_and_ingested_counts() -> Non
     assert result.discovered == 1
     assert result.submitted == 1
     assert ingestion.started == ["one"]
-    assert ingestion.succeeded == [("one", 1, 1)]
+    assert ingestion.succeeded == ["one"]
     assert ingestion.failed == []
     assert ingestion.batch_sizes == [25]
 
 
-def test_run_due_companies_marks_ingestion_failure_and_continues() -> None:
+def test_run_due_career_boards_marks_ingestion_failure_and_continues() -> None:
     ingestion = FakeIngestionClient()
-    ingestion.fail_submission_for_company_ids.add("one")
-    result = run_due_companies(
+    ingestion.fail_submission_for_board_ids.add("one")
+    result = run_due_career_boards(
         _settings(),
-        registry_client=FakeRegistryClient([_company("one"), _company("two")]),
+        registry_client=FakeRegistryClient([_career_board("one"), _career_board("two")]),
         ingestion_client=ingestion,
         adapter_manager=FakeAdapterManager(),
     )
@@ -177,7 +197,7 @@ def test_run_due_companies_marks_ingestion_failure_and_continues() -> None:
     assert result.failed == 1
     assert result.submitted == 1
     assert ingestion.started == ["one", "two"]
-    assert ingestion.succeeded == [("two", 1, 1)]
+    assert ingestion.succeeded == ["two"]
     assert len(ingestion.failed) == 1
     assert ingestion.failed[0][0] == "one"
     assert "ingestion batches failed" in ingestion.failed[0][1]

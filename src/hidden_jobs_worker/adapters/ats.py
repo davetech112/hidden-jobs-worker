@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from hidden_jobs_worker.adapters.base import SourceMetadata
-from hidden_jobs_worker.models import AtsType, CompanyRecord, JobRecord, SourceInfo, SourceType
+from hidden_jobs_worker.models import AtsType, CareerBoard, JobRecord, SourceInfo, SourceType
 
 
 class AtsAdapter(ABC):
@@ -10,12 +10,12 @@ class AtsAdapter(ABC):
     source_name: str
     base_url: str
 
-    def source_info(self, company: CompanyRecord) -> SourceInfo:
+    def source_info(self, career_board: CareerBoard) -> SourceInfo:
         return SourceInfo(
-            key=f"{self.source_name.lower()}:{company.id}",
+            key=f"{self.source_name.lower()}:{career_board.board_id}",
             name=self.source_name,
             type=SourceType.ATS_BOARD,
-            baseUrl=str(company.careers_url or company.website_url or self.base_url),
+            baseUrl=str(career_board.board_url),
         )
 
     @property
@@ -28,9 +28,9 @@ class AtsAdapter(ABC):
         )
 
     @abstractmethod
-    def fetch_jobs(self, company: CompanyRecord) -> list[JobRecord]:
-        """Fetch and normalize jobs for one company."""
+    def fetch_jobs(self, career_board: CareerBoard) -> list[JobRecord]:
+        """Fetch and normalize jobs for one career board."""
 
     @abstractmethod
-    def parse_jobs(self, company: CompanyRecord, payload: Any) -> list[JobRecord]:
+    def parse_jobs(self, career_board: CareerBoard, payload: Any) -> list[JobRecord]:
         """Parse a provider response payload into normalized jobs."""

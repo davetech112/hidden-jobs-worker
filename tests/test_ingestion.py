@@ -200,7 +200,7 @@ def test_submit_batches_records_failed_batch_and_continues() -> None:
     assert result.errors
 
 
-def test_crawl_lifecycle_calls_use_worker_token() -> None:
+def test_career_board_crawl_lifecycle_calls_use_worker_token() -> None:
     seen_requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -209,17 +209,17 @@ def test_crawl_lifecycle_calls_use_worker_token() -> None:
 
     client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
 
-    client.start_crawl("company-1")
-    client.mark_crawl_success("company-1", jobs_found=12, jobs_ingested=10)
-    client.mark_crawl_failure("company-1", "source unavailable")
+    client.start_career_board_crawl("board-1")
+    client.mark_career_board_crawl_success("board-1")
+    client.mark_career_board_crawl_failure("board-1", "source unavailable")
 
     assert [request.url.path for request in seen_requests] == [
-        "/api/internal/companies/company-1/crawl/start",
-        "/api/internal/companies/company-1/crawl/success",
-        "/api/internal/companies/company-1/crawl/failure",
+        "/api/internal/career-boards/board-1/crawl/start",
+        "/api/internal/career-boards/board-1/crawl/success",
+        "/api/internal/career-boards/board-1/crawl/failure",
     ]
     assert all(request.headers["X-Worker-Token"] == "test-token" for request in seen_requests)
     success_body = json.loads(seen_requests[1].content)
     failure_body = json.loads(seen_requests[2].content)
-    assert success_body == {"jobsFound": 12, "jobsIngested": 10}
+    assert success_body == {}
     assert failure_body == {"errorMessage": "source unavailable"}

@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from hidden_jobs_worker.config import Settings
-from hidden_jobs_worker.registry import CompanyRegistryAuthError, CompanyRegistryClient
+from hidden_jobs_worker.registry import CareerBoardRegistryAuthError, CareerBoardRegistryClient
 
 
 def _settings() -> Settings:
@@ -12,7 +12,7 @@ def _settings() -> Settings:
     )
 
 
-def test_company_registry_client_fetches_due_companies() -> None:
+def test_career_board_registry_client_fetches_due_career_boards() -> None:
     seen_requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -20,41 +20,53 @@ def test_company_registry_client_fetches_due_companies() -> None:
         return httpx.Response(
             200,
             json={
-                "data": [
-                    {
-                        "id": "company-1",
-                        "name": "Example Labs",
-                        "websiteUrl": "https://example.com",
-                        "careersUrl": "https://example.com/careers",
-                        "atsType": "GREENHOUSE",
-                        "atsSlug": "example",
-                        "enabled": True,
-                    }
-                ],
+                "data": {
+                    "content": [
+                        {
+                            "boardId": "board-1",
+                            "boardUrl": "https://boards.greenhouse.io/example",
+                            "atsType": "GREENHOUSE",
+                            "atsSlug": "example",
+                            "companyId": "company-1",
+                            "companyName": "Example Labs",
+                            "websiteUrl": "https://example.com",
+                            "careersUrl": "https://example.com/careers",
+                            "confidenceScore": 0.95,
+                            "failureCount": 0,
+                        }
+                    ],
+                    "page": 1,
+                    "size": 10,
+                    "totalElements": 1,
+                    "totalPages": 1,
+                    "first": True,
+                    "last": True,
+                },
                 "message": "ok",
             },
         )
 
-    client = CompanyRegistryClient(
+    client = CareerBoardRegistryClient(
         _settings(),
         httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    companies = client.get_due_companies(page=1, size=10)
+    boards = client.get_due_career_boards(page=1, size=10)
 
-    assert len(companies) == 1
-    assert companies[0].name == "Example Labs"
-    assert companies[0].ats_slug == "example"
+    assert len(boards) == 1
+    assert boards[0].company_name == "Example Labs"
+    assert boards[0].board_id == "board-1"
+    assert boards[0].ats_slug == "example"
     assert str(seen_requests[0].url) == (
-        "https://api.example.com/api/internal/companies/due-for-crawl?page=1&size=10"
+        "https://api.example.com/api/internal/career-boards/due-for-crawl?page=1&size=10"
     )
     assert seen_requests[0].headers["X-Worker-Token"] == "test-token"
 
 
-def test_company_registry_client_classifies_auth_failure() -> None:
-    client = CompanyRegistryClient(
+def test_career_board_registry_client_classifies_auth_failure() -> None:
+    client = CareerBoardRegistryClient(
         _settings(),
         httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(401))),
     )
 
-    with pytest.raises(CompanyRegistryAuthError):
-        client.get_due_companies()
+    with pytest.raises(CareerBoardRegistryAuthError):
+        client.get_due_career_boards()

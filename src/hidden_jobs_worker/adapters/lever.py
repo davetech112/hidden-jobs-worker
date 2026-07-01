@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from hidden_jobs_worker.adapters.ats import AtsAdapter
-from hidden_jobs_worker.models import AtsType, CompanyRecord, EmploymentType, JobRecord, RemoteType
+from hidden_jobs_worker.models import AtsType, CareerBoard, EmploymentType, JobRecord, RemoteType
 
 
 class _TextExtractor(HTMLParser):
@@ -30,22 +30,22 @@ class LeverAdapter(AtsAdapter):
     def __init__(self, client: httpx.Client | None = None, timeout_seconds: float = 15.0) -> None:
         self._client = client or httpx.Client(timeout=timeout_seconds)
 
-    def fetch_jobs(self, company: CompanyRecord) -> list[JobRecord]:
-        if not company.ats_slug:
-            raise ValueError(f"company {company.id} is missing atsSlug")
+    def fetch_jobs(self, career_board: CareerBoard) -> list[JobRecord]:
+        if not career_board.ats_slug:
+            raise ValueError(f"career board {career_board.board_id} is missing atsSlug")
         response = self._client.get(
-            f"{self.base_url}/v0/postings/{company.ats_slug}",
+            f"{self.base_url}/v0/postings/{career_board.ats_slug}",
             params={"mode": "json"},
         )
         response.raise_for_status()
-        return self.parse_jobs(company, response.json())
+        return self.parse_jobs(career_board, response.json())
 
-    def parse_jobs(self, company: CompanyRecord, payload: Any) -> list[JobRecord]:
+    def parse_jobs(self, career_board: CareerBoard, payload: Any) -> list[JobRecord]:
         if not isinstance(payload, list):
             raise ValueError("Lever payload must be an array")
-        return [self._parse_job(company, job) for job in payload if isinstance(job, dict)]
+        return [self._parse_job(career_board, job) for job in payload if isinstance(job, dict)]
 
-    def _parse_job(self, company: CompanyRecord, raw_job: dict[str, Any]) -> JobRecord:
+    def _parse_job(self, career_board: CareerBoard, raw_job: dict[str, Any]) -> JobRecord:
         raw_categories = raw_job.get("categories")
         categories = raw_categories if isinstance(raw_categories, dict) else {}
         description_html = _optional_str(raw_job.get("description"))
@@ -56,9 +56,9 @@ class LeverAdapter(AtsAdapter):
         return JobRecord(
             sourceName=self.source_name,
             sourceJobId=_optional_str(raw_job.get("id")),
-            sourceUrl=_lever_job_url(company, raw_job),
+            sourceUrl=_lever_job_url(career_board, raw_job),
             title=raw_job.get("text") or "",
-            companyName=company.name,
+            companyName=career_board.company_name,
             locationText=_optional_str(categories.get("location")),
             remoteType=_remote_type_from_location(categories.get("location")),
             employmentType=_map_employment_type(categories.get("commitment")),
@@ -66,16 +66,20 @@ class LeverAdapter(AtsAdapter):
             descriptionHtml=description_html,
             postedAt=_parse_created_at(raw_job.get("createdAt")),
             tags=_lever_tags(categories),
-            raw={"source": self.source_name, "companyId": company.id},
+            raw={
+                "source": self.source_name,
+                "companyId": career_board.company_id,
+                "boardId": career_board.board_id,
+            },
         )
 
 
-def _lever_job_url(company: CompanyRecord, raw_job: dict[str, Any]) -> str:
+def _lever_job_url(career_board: CareerBoard, raw_job: dict[str, Any]) -> str:
     url = raw_job.get("hostedUrl") or raw_job.get("applyUrl")
     if isinstance(url, str) and url.strip():
         return url
-    if company.ats_slug and raw_job.get("id"):
-        return f"https://jobs.lever.co/{company.ats_slug}/{raw_job['id']}"
+    if career_board.ats_slug and raw_job.get("id"):
+        return f"https://jobs.lever.co/{career_board.ats_slug}/{raw_job['id']}"
     raise ValueError("Lever job missing canonical URL")
 
 
