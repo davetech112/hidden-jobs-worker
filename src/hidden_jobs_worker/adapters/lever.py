@@ -55,6 +55,7 @@ class LeverAdapter(AtsAdapter):
         )
         return JobRecord(
             sourceName=self.source_name,
+            sourceType="ATS",
             sourceJobId=_optional_str(raw_job.get("id")),
             sourceUrl=_lever_job_url(career_board, raw_job),
             title=raw_job.get("text") or "",

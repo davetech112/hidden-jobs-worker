@@ -51,6 +51,7 @@ class GreenhouseAdapter(AtsAdapter):
         content = _optional_str(raw_job.get("content"))
         return JobRecord(
             sourceName=self.source_name,
+            sourceType="ATS",
             sourceJobId=str(raw_job["id"]) if raw_job.get("id") is not None else None,
             sourceUrl=_greenhouse_job_url(career_board, raw_job),
             title=raw_job.get("title") or "",
