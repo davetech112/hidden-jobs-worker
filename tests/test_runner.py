@@ -179,7 +179,7 @@ def test_run_due_career_boards_marks_success_and_batches() -> None:
     assert ingestion.started == ["one"]
     assert ingestion.succeeded == ["one"]
     assert ingestion.failed == []
-    assert ingestion.batch_sizes == [25]
+    assert ingestion.batch_sizes == [10]
 
 
 def test_run_due_career_boards_marks_ingestion_failure_and_continues() -> None:
