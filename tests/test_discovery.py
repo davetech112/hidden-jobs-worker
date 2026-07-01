@@ -126,6 +126,30 @@ def test_detects_ats_from_raw_embedded_url_in_html() -> None:
     assert detection.ats_slug == "example"
 
 
+def test_detects_adapter_pack_1_urls() -> None:
+    cases = [
+        (
+            "https://jobs.smartrecruiters.com/example/123-backend-engineer",
+            AtsType.SMARTRECRUITERS,
+            "example",
+        ),
+        ("https://example.teamtailor.com/jobs", AtsType.TEAMTAILOR, "example"),
+        ("https://example.recruitee.com/o/backend-engineer", AtsType.RECRUITEE, "example"),
+        (
+            "https://www.comeet.com/careers-api/2.0/company/example/positions",
+            AtsType.COMEET,
+            "example",
+        ),
+        ("https://example.jobs.personio.com/xml", AtsType.PERSONIO, "example"),
+    ]
+
+    for url, ats_type, slug in cases:
+        detection = detect_ats(url)
+
+        assert detection.ats_type == ats_type
+        assert detection.ats_slug == slug
+
+
 def test_careers_finder_from_homepage_html() -> None:
     html = '<html><body><a href="/company/careers">Work with us</a></body></html>'
 
@@ -191,6 +215,33 @@ def test_workable_board_verification_success_and_failure_with_mocked_responses()
 
     assert verifier.verify(AtsType.WORKABLE, "valid")
     assert not verifier.verify(AtsType.WORKABLE, "missing")
+
+
+def test_adapter_pack_1_board_verification_success_and_failure() -> None:
+    valid_urls = {
+        "https://api.smartrecruiters.com/v1/companies/valid/postings",
+        "https://valid.teamtailor.com/jobs",
+        "https://valid.recruitee.com/api/offers/",
+        "https://www.comeet.com/careers-api/2.0/company/valid/positions",
+        "https://valid.jobs.personio.com/xml",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) in valid_urls:
+            return httpx.Response(200, json={"jobs": []})
+        return httpx.Response(404)
+
+    verifier = BoardVerifier(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    for ats_type in (
+        AtsType.SMARTRECRUITERS,
+        AtsType.TEAMTAILOR,
+        AtsType.RECRUITEE,
+        AtsType.COMEET,
+        AtsType.PERSONIO,
+    ):
+        assert verifier.verify(ats_type, "valid")
+        assert not verifier.verify(ats_type, "missing")
 
 
 def test_discovery_registration_client_parses_wrapped_response_and_posts_token() -> None:

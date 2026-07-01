@@ -74,7 +74,10 @@ def _detect_ats_from_url(url: str) -> AtsDetection:
     if host in {"jobs.smartrecruiters.com", "smartrecruiters.com"} or host.endswith(
         ".smartrecruiters.com"
     ):
-        return AtsDetection(AtsType.SMARTRECRUITERS, _first_path_part(path_parts), url)
+        slug = _first_path_part(path_parts)
+        if host == "api.smartrecruiters.com" and len(path_parts) >= 3:
+            slug = path_parts[2]
+        return AtsDetection(AtsType.SMARTRECRUITERS, slug, url)
 
     if host == "teamtailor.com" or host.endswith(".teamtailor.com"):
         slug = host.split(".")[0] if host != "teamtailor.com" else _first_path_part(path_parts)
@@ -83,6 +86,30 @@ def _detect_ats_from_url(url: str) -> AtsDetection:
     if host == "recruitee.com" or host.endswith(".recruitee.com"):
         slug = host.split(".")[0] if host != "recruitee.com" else _first_path_part(path_parts)
         return AtsDetection(AtsType.RECRUITEE, slug, url)
+
+    if host == "comeet.com" or host.endswith(".comeet.com"):
+        slug = None
+        if "company" in path_parts:
+            index = path_parts.index("company")
+            if len(path_parts) > index + 1:
+                slug = path_parts[index + 1]
+        elif "jobs" in path_parts:
+            index = path_parts.index("jobs")
+            if len(path_parts) > index + 1:
+                slug = path_parts[index + 1]
+        else:
+            slug = _first_path_part(path_parts)
+        return AtsDetection(AtsType.COMEET, slug, url)
+
+    if host == "jobs.personio.com" or host.endswith(".jobs.personio.com"):
+        slug = host.removesuffix(".jobs.personio.com")
+        if slug == host:
+            slug = _first_path_part(path_parts)
+        return AtsDetection(AtsType.PERSONIO, slug, url)
+
+    if host == "personio.com" or host.endswith(".personio.com"):
+        slug = host.split(".")[0] if host != "personio.com" else _first_path_part(path_parts)
+        return AtsDetection(AtsType.PERSONIO, slug, url)
 
     return AtsDetection(AtsType.UNKNOWN)
 

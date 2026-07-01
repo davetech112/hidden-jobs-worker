@@ -25,6 +25,20 @@ class BoardVerifier:
             )
         if ats_type == AtsType.WORKABLE:
             return self._is_reachable(f"https://apply.workable.com/{ats_slug}")
+        if ats_type == AtsType.SMARTRECRUITERS:
+            return self._is_reachable(
+                f"https://api.smartrecruiters.com/v1/companies/{ats_slug}/postings"
+            )
+        if ats_type == AtsType.TEAMTAILOR:
+            return self._is_reachable(f"https://{ats_slug}.teamtailor.com/jobs")
+        if ats_type == AtsType.RECRUITEE:
+            return self._is_reachable(f"https://{ats_slug}.recruitee.com/api/offers/")
+        if ats_type == AtsType.COMEET:
+            return self._is_reachable(
+                f"https://www.comeet.com/careers-api/2.0/company/{ats_slug}/positions"
+            )
+        if ats_type == AtsType.PERSONIO:
+            return self._is_reachable(f"https://{ats_slug}.jobs.personio.com/xml")
         return False
 
     def _is_any_reachable(self, urls: tuple[str, ...]) -> bool:
