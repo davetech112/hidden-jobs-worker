@@ -17,7 +17,7 @@ from hidden_jobs_worker.discovery.registration import (
     DiscoveryRegistrationClient,
     build_career_board_discovery_payload,
 )
-from hidden_jobs_worker.discovery.seeds import SeedCompany
+from hidden_jobs_worker.discovery.seeds import SeedCompany, load_seed_companies
 from hidden_jobs_worker.models import AtsType, CompanyCandidate
 
 
@@ -62,6 +62,21 @@ BACKEND_DISCOVERY_PAYLOAD_FIELDS = {
     "detectedFrom",
     "discoveryNotes",
 }
+
+
+def test_default_discovery_seed_file_parses() -> None:
+    companies = load_seed_companies("discovery/seeds/companies.yml")
+    names = {company.name for company in companies}
+
+    assert len(companies) >= 30
+    assert {
+        "Bosch",
+        "Mentimeter",
+        "Recruitee",
+        "monday.com",
+        "Personio",
+    }.issubset(names)
+    assert all(str(company.website_url).startswith("https://") for company in companies)
 
 
 def test_detects_greenhouse_url() -> None:
