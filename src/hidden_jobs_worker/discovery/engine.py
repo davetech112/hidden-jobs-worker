@@ -26,7 +26,17 @@ class CompanyDiscoveryEngine:
         seeds = load_seed_companies(seed_file)
         if limit is not None:
             seeds = seeds[:limit]
-        return [self.discover_company(seed) for seed in seeds]
+        candidates = []
+        for seed in seeds:
+            try:
+                candidates.append(self.discover_company(seed))
+            except Exception:
+                LOGGER.exception(
+                    "company discovery failed",
+                    extra={"company_name": seed.name, "website_url": str(seed.website_url)},
+                )
+                candidates.append(_failed_candidate(seed))
+        return candidates
 
     def discover_company(self, seed: SeedCompany) -> CompanyCandidate:
         notes: list[str] = []
@@ -66,3 +76,17 @@ class CompanyDiscoveryEngine:
             confidenceScore=confidence,
             discoveryNotes=notes,
         )
+
+
+def _failed_candidate(seed: SeedCompany) -> CompanyCandidate:
+    return CompanyCandidate(
+        name=seed.name,
+        websiteUrl=str(seed.website_url),
+        careersUrl=None,
+        boardUrl=None,
+        atsType=AtsType.UNKNOWN,
+        atsSlug=None,
+        source="static_seed",
+        confidenceScore=0.1,
+        discoveryNotes=["Company discovery failed; skipped safely"],
+    )

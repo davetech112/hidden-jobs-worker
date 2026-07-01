@@ -141,6 +141,22 @@ def test_detects_ats_from_raw_embedded_url_in_html() -> None:
     assert detection.ats_slug == "example"
 
 
+def test_invalid_recruitee_slug_does_not_crash() -> None:
+    detection = detect_ats('https://bad"slug.recruitee.com/o/backend-engineer')
+
+    assert detection.ats_type == AtsType.RECRUITEE
+    assert detection.ats_slug is None
+
+
+def test_escaped_html_entity_slug_is_rejected() -> None:
+    html = '<script>window.jobsUrl = "https://bad&quot;slug.recruitee.com/o/role";</script>'
+
+    detection = detect_ats(html=html)
+
+    assert detection.ats_type == AtsType.RECRUITEE
+    assert detection.ats_slug is None
+
+
 def test_detects_adapter_pack_1_urls() -> None:
     cases = [
         (
@@ -257,6 +273,16 @@ def test_adapter_pack_1_board_verification_success_and_failure() -> None:
     ):
         assert verifier.verify(ats_type, "valid")
         assert not verifier.verify(ats_type, "missing")
+
+
+def test_board_verifier_catches_invalid_url_and_returns_false() -> None:
+    class InvalidUrlClient:
+        def get(self, url: str) -> httpx.Response:
+            raise httpx.InvalidURL("Invalid port")
+
+    verifier = BoardVerifier(client=InvalidUrlClient())
+
+    assert not verifier.verify(AtsType.RECRUITEE, "valid")
 
 
 def test_discovery_registration_client_parses_wrapped_response_and_posts_token() -> None:
@@ -521,6 +547,42 @@ def test_discovery_engine_detects_ats_from_final_careers_url() -> None:
     assert candidate.ats_type == AtsType.LEVER
     assert candidate.ats_slug == "example"
     assert candidate.confidence_score == 0.95
+
+
+def test_discovery_continues_after_one_failed_candidate(tmp_path) -> None:
+    seed_file = tmp_path / "companies.yml"
+    seed_file.write_text(
+        "- name: Broken\n"
+        "  websiteUrl: https://broken.example\n"
+        "- name: Valid\n"
+        "  websiteUrl: https://valid.example\n",
+        encoding="utf-8",
+    )
+
+    class FakeCareersFinder:
+        def find_page(self, website_url: str) -> CareersPage:
+            if website_url == "https://broken.example/":
+                raise ValueError("bad careers page")
+            return CareersPage(url="https://jobs.lever.co/valid", html="")
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            return ats_type == AtsType.LEVER and ats_slug == "valid"
+
+    engine = CompanyDiscoveryEngine(
+        careers_finder=FakeCareersFinder(),
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidates = engine.discover_from_seed_file(str(seed_file))
+
+    assert len(candidates) == 2
+    assert candidates[0].name == "Broken"
+    assert candidates[0].ats_type == AtsType.UNKNOWN
+    assert candidates[0].confidence_score == 0.1
+    assert candidates[1].name == "Valid"
+    assert candidates[1].ats_type == AtsType.LEVER
+    assert candidates[1].confidence_score == 0.95
 
 
 def test_discovery_engine_marks_verified_ashby_and_workable_high_confidence() -> None:

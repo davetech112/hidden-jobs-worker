@@ -54,22 +54,22 @@ def _detect_ats_from_url(url: str) -> AtsDetection:
     path_parts = [part for part in parsed.path.split("/") if part]
 
     if host in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
-        return AtsDetection(AtsType.GREENHOUSE, _first_path_part(path_parts), url)
+        return _detection(AtsType.GREENHOUSE, _first_path_part(path_parts), url)
 
     if "greenhouse.io" in host:
         slug = _first_path_part(path_parts)
         if host.startswith("boards-api.") and len(path_parts) >= 3:
             slug = path_parts[2]
-        return AtsDetection(AtsType.GREENHOUSE, slug, url)
+        return _detection(AtsType.GREENHOUSE, slug, url)
 
     if host == "jobs.lever.co" or host.endswith(".lever.co"):
-        return AtsDetection(AtsType.LEVER, _first_path_part(path_parts), url)
+        return _detection(AtsType.LEVER, _first_path_part(path_parts), url)
 
     if host == "jobs.ashbyhq.com" or host.endswith(".ashbyhq.com"):
-        return AtsDetection(AtsType.ASHBY, _first_path_part(path_parts), url)
+        return _detection(AtsType.ASHBY, _first_path_part(path_parts), url)
 
     if host == "apply.workable.com" or host.endswith(".workable.com"):
-        return AtsDetection(AtsType.WORKABLE, _first_path_part(path_parts), url)
+        return _detection(AtsType.WORKABLE, _first_path_part(path_parts), url)
 
     if host in {"jobs.smartrecruiters.com", "smartrecruiters.com"} or host.endswith(
         ".smartrecruiters.com"
@@ -77,15 +77,15 @@ def _detect_ats_from_url(url: str) -> AtsDetection:
         slug = _first_path_part(path_parts)
         if host == "api.smartrecruiters.com" and len(path_parts) >= 3:
             slug = path_parts[2]
-        return AtsDetection(AtsType.SMARTRECRUITERS, slug, url)
+        return _detection(AtsType.SMARTRECRUITERS, slug, url)
 
     if host == "teamtailor.com" or host.endswith(".teamtailor.com"):
         slug = host.split(".")[0] if host != "teamtailor.com" else _first_path_part(path_parts)
-        return AtsDetection(AtsType.TEAMTAILOR, slug, url)
+        return _detection(AtsType.TEAMTAILOR, slug, url)
 
     if host == "recruitee.com" or host.endswith(".recruitee.com"):
         slug = host.split(".")[0] if host != "recruitee.com" else _first_path_part(path_parts)
-        return AtsDetection(AtsType.RECRUITEE, slug, url)
+        return _detection(AtsType.RECRUITEE, slug, url)
 
     if host == "comeet.com" or host.endswith(".comeet.com"):
         slug = None
@@ -99,17 +99,17 @@ def _detect_ats_from_url(url: str) -> AtsDetection:
                 slug = path_parts[index + 1]
         else:
             slug = _first_path_part(path_parts)
-        return AtsDetection(AtsType.COMEET, slug, url)
+        return _detection(AtsType.COMEET, slug, url)
 
     if host == "jobs.personio.com" or host.endswith(".jobs.personio.com"):
         slug = host.removesuffix(".jobs.personio.com")
         if slug == host:
             slug = _first_path_part(path_parts)
-        return AtsDetection(AtsType.PERSONIO, slug, url)
+        return _detection(AtsType.PERSONIO, slug, url)
 
     if host == "personio.com" or host.endswith(".personio.com"):
         slug = host.split(".")[0] if host != "personio.com" else _first_path_part(path_parts)
-        return AtsDetection(AtsType.PERSONIO, slug, url)
+        return _detection(AtsType.PERSONIO, slug, url)
 
     return AtsDetection(AtsType.UNKNOWN)
 
@@ -120,3 +120,26 @@ def _first_path_part(path_parts: list[str]) -> str | None:
 
 def _extract_urls_from_text(text: str) -> list[str]:
     return re.findall(r"https?://[^\s\"'<>]+", text)
+
+
+def _detection(ats_type: AtsType, slug: str | None, matched_url: str) -> AtsDetection:
+    return AtsDetection(ats_type, sanitize_ats_slug(slug), matched_url)
+
+
+def sanitize_ats_slug(value: str | None) -> str | None:
+    if value is None:
+        return None
+    slug = value.strip().strip("/")
+    if not slug:
+        return None
+    if "://" in slug or "\\" in slug:
+        return None
+    if any(character in slug for character in ("'", '"', "/", ":", ",", "{", "}", "<", ">")):
+        return None
+    if "&" in slug or ";" in slug:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", slug):
+        return None
+    if ".." in slug or slug.endswith("."):
+        return None
+    return slug
