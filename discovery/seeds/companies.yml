@@ -18,3 +18,53 @@
   websiteUrl: https://huggingface.co
 - name: Grafana Labs
   websiteUrl: https://grafana.com
+
+# SmartRecruiters candidates
+- name: Bosch
+  websiteUrl: https://www.bosch.com
+- name: Visa
+  websiteUrl: https://www.visa.com
+- name: Ubisoft
+  websiteUrl: https://www.ubisoft.com
+- name: Skechers
+  websiteUrl: https://www.skechers.com
+
+# Teamtailor candidates
+- name: Mentimeter
+  websiteUrl: https://www.mentimeter.com
+- name: Epidemic Sound
+  websiteUrl: https://www.epidemicsound.com
+- name: Pleo
+  websiteUrl: https://www.pleo.io
+- name: Storytel
+  websiteUrl: https://www.storytel.com
+
+# Recruitee candidates
+- name: Recruitee
+  websiteUrl: https://recruitee.com
+- name: Mews
+  websiteUrl: https://www.mews.com
+- name: Otrium
+  websiteUrl: https://otrium.com
+- name: Mollie
+  websiteUrl: https://www.mollie.com
+
+# Comeet candidates
+- name: monday.com
+  websiteUrl: https://monday.com
+- name: Fiverr
+  websiteUrl: https://www.fiverr.com
+- name: Similarweb
+  websiteUrl: https://www.similarweb.com
+- name: Taboola
+  websiteUrl: https://www.taboola.com
+
+# Personio candidates
+- name: Personio
+  websiteUrl: https://www.personio.com
+- name: GetYourGuide
+  websiteUrl: https://www.getyourguide.com
+- name: Raisin
+  websiteUrl: https://www.raisin.com
+- name: Freeletics
+  websiteUrl: https://www.freeletics.com
