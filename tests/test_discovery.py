@@ -1,6 +1,9 @@
+import json
+
 import httpx
 
 from hidden_jobs_worker import cli
+from hidden_jobs_worker.config import Settings
 from hidden_jobs_worker.discovery.ats_detector import detect_ats
 from hidden_jobs_worker.discovery.board_verifier import BoardVerifier
 from hidden_jobs_worker.discovery.careers_finder import (
@@ -9,8 +12,38 @@ from hidden_jobs_worker.discovery.careers_finder import (
     find_careers_link,
 )
 from hidden_jobs_worker.discovery.engine import CompanyDiscoveryEngine
+from hidden_jobs_worker.discovery.registration import (
+    DiscoveryRegistrationAuthError,
+    DiscoveryRegistrationClient,
+)
 from hidden_jobs_worker.discovery.seeds import SeedCompany
 from hidden_jobs_worker.models import AtsType, CompanyCandidate
+
+
+def _settings() -> Settings:
+    return Settings(
+        SPRING_API_BASE_URL="https://api.example.com",
+        WORKER_INGEST_TOKEN="test-token",
+    )
+
+
+def _candidate(
+    *,
+    name: str = "Example",
+    ats_type: str = "LEVER",
+    ats_slug: str | None = "example",
+    confidence_score: float = 0.95,
+) -> CompanyCandidate:
+    return CompanyCandidate(
+        name=name,
+        websiteUrl="https://example.com",
+        careersUrl="https://jobs.lever.co/example",
+        atsType=ats_type,
+        atsSlug=ats_slug,
+        source="static_seed",
+        confidenceScore=confidence_score,
+        discoveryNotes=["ATS board verified"],
+    )
 
 
 def test_detects_greenhouse_url() -> None:
@@ -142,6 +175,98 @@ def test_workable_board_verification_success_and_failure_with_mocked_responses()
     assert not verifier.verify(AtsType.WORKABLE, "missing")
 
 
+def test_discovery_registration_client_parses_wrapped_response_and_posts_token() -> None:
+    seen_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return httpx.Response(
+            201,
+            json={
+                "success": True,
+                "data": {
+                    "status": "created",
+                    "companyId": "company-1",
+                    "message": "created",
+                },
+                "message": "Discovery registered",
+                "timestamp": "2026-07-01T00:00:00Z",
+            },
+        )
+
+    client = DiscoveryRegistrationClient(
+        _settings(),
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.submit_career_board(_candidate())
+
+    assert result.status == "created"
+    assert result.submitted
+    assert result.company_id == "company-1"
+    assert str(seen_requests[0].url) == (
+        "https://api.example.com/api/internal/discoveries/career-boards"
+    )
+    assert seen_requests[0].headers["X-Worker-Token"] == "test-token"
+    request_json = json.loads(seen_requests[0].content)
+    assert request_json["atsType"] == "LEVER"
+    assert request_json["confidenceScore"] == 0.95
+
+
+def test_discovery_registration_client_handles_created_updated_and_ignored() -> None:
+    responses = iter(
+        (
+            {"status": "created"},
+            {"status": "updated"},
+            {"status": "ignored", "message": "duplicate"},
+        )
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=next(responses))
+
+    client = DiscoveryRegistrationClient(
+        _settings(),
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    created = client.submit_career_board(_candidate(name="Created"))
+    updated = client.submit_career_board(_candidate(name="Updated"))
+    ignored = client.submit_career_board(_candidate(name="Ignored"))
+
+    assert created.submitted
+    assert created.created
+    assert updated.submitted
+    assert updated.updated
+    assert ignored.ignored
+
+
+def test_discovery_registration_client_classifies_auth_failure() -> None:
+    client = DiscoveryRegistrationClient(
+        _settings(),
+        httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(401))),
+    )
+
+    try:
+        client.submit_career_board(_candidate())
+    except DiscoveryRegistrationAuthError:
+        pass
+    else:
+        raise AssertionError("expected auth failure")
+
+
+def test_discovery_registration_client_uses_configured_timeout() -> None:
+    settings = Settings(
+        SPRING_API_BASE_URL="https://api.example.com",
+        WORKER_INGEST_TOKEN="test-token",
+        WORKER_HTTP_TIMEOUT_SECONDS=12,
+    )
+
+    client = DiscoveryRegistrationClient(settings)
+
+    assert client._client.timeout.connect == 12
+
+
 def test_discovery_engine_detects_ats_from_careers_page_html() -> None:
     class FakeCareersFinder:
         def find_page(self, website_url: str) -> CareersPage:
@@ -241,25 +366,190 @@ def test_discovery_cli_dry_run(monkeypatch, tmp_path, capsys) -> None:
 
     class FakeDiscoveryEngine:
         def discover_from_seed_file(self, seed_file: str, limit: int | None = None):
-            return [
-                CompanyCandidate(
-                    name="Example",
-                    websiteUrl="https://example.com",
-                    careersUrl="https://jobs.lever.co/example",
-                    atsType="LEVER",
-                    atsSlug="example",
-                    source="static_seed",
-                    confidenceScore=0.95,
-                    discoveryNotes=["ATS board verified"],
-                )
-            ]
+            return [_candidate()]
+
+    class FailingRegistrationClient:
+        def __init__(self, settings: Settings) -> None:
+            raise AssertionError("dry-run must not create registration client")
 
     monkeypatch.setattr(cli, "CompanyDiscoveryEngine", FakeDiscoveryEngine)
+    monkeypatch.setattr(cli, "DiscoveryRegistrationClient", FailingRegistrationClient)
 
     assert cli.main(["discover-companies", "--seed-file", str(seed_file), "--dry-run"]) == 0
     output = capsys.readouterr().out
     assert "company discovery completed" in output
     assert "Example: atsType=LEVER atsSlug=example confidence=0.95" in output
+
+
+def test_discovery_cli_submits_verified_candidate(monkeypatch, tmp_path) -> None:
+    seed_file = tmp_path / "companies.yml"
+    seed_file.write_text("- name: Example\n  websiteUrl: https://example.com\n", encoding="utf-8")
+    submitted: list[CompanyCandidate] = []
+
+    class FakeDiscoveryEngine:
+        def discover_from_seed_file(self, seed_file: str, limit: int | None = None):
+            return [_candidate()]
+
+    class FakeRegistrationClient:
+        def __init__(self, settings: Settings) -> None:
+            pass
+
+        def submit_career_board(self, candidate: CompanyCandidate):
+            submitted.append(candidate)
+            return type(
+                "Result",
+                (),
+                {"created": True, "updated": False, "ignored": False},
+            )()
+
+    monkeypatch.setattr(cli, "CompanyDiscoveryEngine", FakeDiscoveryEngine)
+    monkeypatch.setattr(cli, "DiscoveryRegistrationClient", FakeRegistrationClient)
+    monkeypatch.setattr(cli, "get_settings", _settings)
+
+    assert cli.main(["discover-companies", "--seed-file", str(seed_file)]) == 0
+    assert [candidate.name for candidate in submitted] == ["Example"]
+
+
+def test_discovery_cli_passes_limit_and_min_confidence(monkeypatch, tmp_path) -> None:
+    seed_file = tmp_path / "companies.yml"
+    seed_file.write_text("- name: Example\n  websiteUrl: https://example.com\n", encoding="utf-8")
+    seen_limits: list[int | None] = []
+    submitted: list[CompanyCandidate] = []
+
+    class FakeDiscoveryEngine:
+        def discover_from_seed_file(self, seed_file: str, limit: int | None = None):
+            seen_limits.append(limit)
+            return [_candidate(confidence_score=0.50)]
+
+    class FakeRegistrationClient:
+        def __init__(self, settings: Settings) -> None:
+            pass
+
+        def submit_career_board(self, candidate: CompanyCandidate):
+            submitted.append(candidate)
+            return type(
+                "Result",
+                (),
+                {"created": True, "updated": False, "ignored": False},
+            )()
+
+    monkeypatch.setattr(cli, "CompanyDiscoveryEngine", FakeDiscoveryEngine)
+    monkeypatch.setattr(cli, "DiscoveryRegistrationClient", FakeRegistrationClient)
+    monkeypatch.setattr(cli, "get_settings", _settings)
+
+    assert (
+        cli.main(
+            [
+                "discover-companies",
+                "--seed-file",
+                str(seed_file),
+                "--limit",
+                "1",
+                "--min-confidence",
+                "0.50",
+            ]
+        )
+        == 0
+    )
+    assert seen_limits == [1]
+    assert [candidate.name for candidate in submitted] == ["Example"]
+
+
+def test_discovery_submission_skips_low_confidence_candidate() -> None:
+    class FakeRegistrationClient:
+        def submit_career_board(self, candidate: CompanyCandidate):
+            raise AssertionError("low-confidence candidate must not submit")
+
+    summary = cli._submit_discovery_candidates(
+        [_candidate(confidence_score=0.35)],
+        min_confidence=0.90,
+        registration_client=FakeRegistrationClient(),
+    )
+
+    assert summary == {"submitted": 0, "updated": 0, "ignored": 0, "skipped": 1, "failed": 0}
+
+
+def test_discovery_submission_skips_unknown_ats_candidate() -> None:
+    class FakeRegistrationClient:
+        def submit_career_board(self, candidate: CompanyCandidate):
+            raise AssertionError("unknown ATS candidate must not submit")
+
+    summary = cli._submit_discovery_candidates(
+        [_candidate(ats_type="UNKNOWN", ats_slug=None)],
+        min_confidence=0.90,
+        registration_client=FakeRegistrationClient(),
+    )
+
+    assert summary == {"submitted": 0, "updated": 0, "ignored": 0, "skipped": 1, "failed": 0}
+
+
+def test_discovery_submission_failed_candidate_does_not_stop_others() -> None:
+    class FakeRegistrationClient:
+        def submit_career_board(self, candidate: CompanyCandidate):
+            if candidate.name == "Fails":
+                raise RuntimeError("backend unavailable")
+            return type(
+                "Result",
+                (),
+                {"created": True, "updated": False, "ignored": False},
+            )()
+
+    summary = cli._submit_discovery_candidates(
+        [
+            _candidate(name="Fails"),
+            _candidate(name="Succeeds"),
+        ],
+        min_confidence=0.90,
+        registration_client=FakeRegistrationClient(),
+    )
+
+    assert summary == {"submitted": 1, "updated": 0, "ignored": 0, "skipped": 0, "failed": 1}
+
+
+def test_discovery_submission_counts_updated_ignored_and_skips_duplicates() -> None:
+    class FakeRegistrationClient:
+        def submit_career_board(self, candidate: CompanyCandidate):
+            if candidate.name == "Updated":
+                return type(
+                    "Result",
+                    (),
+                    {"created": False, "updated": True, "ignored": False},
+                )()
+            return type(
+                "Result",
+                (),
+                {"created": False, "updated": False, "ignored": True},
+            )()
+
+    summary = cli._submit_discovery_candidates(
+        [
+            _candidate(name="Updated", ats_slug="updated"),
+            _candidate(name="Ignored", ats_slug="ignored"),
+            _candidate(name="Duplicate", ats_slug="updated"),
+        ],
+        min_confidence=0.90,
+        registration_client=FakeRegistrationClient(),
+    )
+
+    assert summary == {"submitted": 0, "updated": 1, "ignored": 1, "skipped": 1, "failed": 0}
+
+
+def test_discovery_submission_counts_created() -> None:
+    class FakeRegistrationClient:
+        def submit_career_board(self, candidate: CompanyCandidate):
+            return type(
+                "Result",
+                (),
+                {"created": True, "updated": False, "ignored": False},
+            )()
+
+    summary = cli._submit_discovery_candidates(
+        [_candidate(name="Created")],
+        min_confidence=0.90,
+        registration_client=FakeRegistrationClient(),
+    )
+
+    assert summary == {"submitted": 1, "updated": 0, "ignored": 0, "skipped": 0, "failed": 0}
 
 
 def test_discovery_cli_dry_run_shows_verified_ashby_and_workable(

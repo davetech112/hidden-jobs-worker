@@ -5,9 +5,16 @@ from collections.abc import Sequence
 from hidden_jobs_worker.adapters.remotive import RemotiveAdapter
 from hidden_jobs_worker.config import get_settings, get_source_run_settings
 from hidden_jobs_worker.discovery.engine import CompanyDiscoveryEngine
+from hidden_jobs_worker.discovery.registration import DiscoveryRegistrationClient
 from hidden_jobs_worker.ingestion import IngestionClient
 from hidden_jobs_worker.logging import configure_logging
-from hidden_jobs_worker.models import IngestionPayload, WorkerInfo, build_run_id
+from hidden_jobs_worker.models import (
+    AtsType,
+    CompanyCandidate,
+    IngestionPayload,
+    WorkerInfo,
+    build_run_id,
+)
 from hidden_jobs_worker.runner import run_due_companies
 
 LOGGER = logging.getLogger(__name__)
@@ -50,6 +57,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Discover candidates without submitting them to the backend.",
     )
     discover_companies.add_argument("--limit", type=int, default=None)
+    discover_companies.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.90,
+        help="Minimum confidence required before submitting a discovery.",
+    )
 
     args = parser.parse_args(argv)
     settings = get_source_run_settings()
@@ -90,7 +103,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"confidence={candidate.confidence_score:.2f}"
             )
         if not args.dry_run:
-            LOGGER.info("backend company registration is not wired yet")
+            settings = get_settings()
+            submit_summary = _submit_discovery_candidates(
+                candidates,
+                min_confidence=args.min_confidence,
+                registration_client=DiscoveryRegistrationClient(settings),
+            )
+            LOGGER.info(
+                "company discovery submission completed",
+                extra={
+                    "submitted": submit_summary["submitted"],
+                    "updated": submit_summary["updated"],
+                    "ignored": submit_summary["ignored"],
+                    "skipped": submit_summary["skipped"],
+                    "failed": submit_summary["failed"],
+                    "min_confidence": args.min_confidence,
+                },
+            )
         return 0
     return 1
 
@@ -136,6 +165,66 @@ def _run_source(source: str, dry_run: bool) -> int:
         },
     )
     return 0
+
+
+def _submit_discovery_candidates(
+    candidates: list[CompanyCandidate],
+    min_confidence: float,
+    registration_client: DiscoveryRegistrationClient,
+) -> dict[str, int]:
+    summary = {"submitted": 0, "updated": 0, "ignored": 0, "skipped": 0, "failed": 0}
+    seen_board_keys: set[tuple[AtsType, str | None]] = set()
+
+    for candidate in candidates:
+        if candidate.confidence_score < min_confidence or candidate.ats_type == AtsType.UNKNOWN:
+            summary["skipped"] += 1
+            LOGGER.info(
+                "skipping discovery candidate",
+                extra={
+                    "candidate_name": candidate.name,
+                    "ats_type": candidate.ats_type,
+                    "confidence": candidate.confidence_score,
+                    "min_confidence": min_confidence,
+                },
+            )
+            continue
+
+        board_key = (candidate.ats_type, candidate.ats_slug)
+        if board_key in seen_board_keys:
+            summary["skipped"] += 1
+            LOGGER.info(
+                "skipping duplicate discovery candidate",
+                extra={
+                    "candidate_name": candidate.name,
+                    "ats_type": candidate.ats_type,
+                    "ats_slug": candidate.ats_slug,
+                },
+            )
+            continue
+
+        try:
+            result = registration_client.submit_career_board(candidate)
+        except Exception:
+            summary["failed"] += 1
+            LOGGER.exception(
+                "discovery candidate submission failed",
+                extra={
+                    "candidate_name": candidate.name,
+                    "ats_type": candidate.ats_type,
+                    "ats_slug": candidate.ats_slug,
+                },
+            )
+            continue
+
+        seen_board_keys.add(board_key)
+        if result.created:
+            summary["submitted"] += 1
+        elif result.updated:
+            summary["updated"] += 1
+        elif result.ignored:
+            summary["ignored"] += 1
+
+    return summary
 
 
 if __name__ == "__main__":
