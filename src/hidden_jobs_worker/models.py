@@ -170,6 +170,7 @@ class JobRecord(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     source_name: str = Field(alias="sourceName")
+    source_type: str | None = Field(default=None, alias="sourceType")
     source_job_id: str | None = Field(default=None, alias="sourceJobId")
     source_url: HttpUrl = Field(alias="sourceUrl")
     title: str
