@@ -108,6 +108,55 @@ def test_ingestion_client_parses_wrapped_response() -> None:
     assert result.saved_count == 1
 
 
+def test_ingestion_client_parses_raw_count_response_without_run_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "received": 1,
+                "saved": 1,
+                "duplicatesSkipped": 0,
+                "failed": 0,
+                "errors": [],
+            },
+        )
+
+    client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.submit(_payload())
+
+    assert result.run_id is None
+    assert result.received == 1
+    assert result.saved_count == 1
+    assert result.failed_count == 0
+
+
+def test_ingestion_client_parses_wrapped_count_response_without_run_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "received": 1,
+                    "saved": 1,
+                    "duplicatesSkipped": 0,
+                    "failed": 0,
+                    "errors": [],
+                },
+                "message": "Jobs ingested successfully",
+                "timestamp": "2026-07-01T00:00:00Z",
+            },
+        )
+
+    client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.submit(_payload())
+
+    assert result.run_id is None
+    assert result.received == 1
+    assert result.saved_count == 1
+    assert result.failed_count == 0
+
+
 def test_ingestion_client_retries_transient_status() -> None:
     attempts = 0
 
@@ -166,6 +215,39 @@ def test_submit_batches_sends_sixty_jobs_as_three_batches() -> None:
     assert batch_sizes == [25, 25, 10]
     assert result.received == 60
     assert result.saved == 60
+    assert result.failed == 0
+
+
+def test_submit_batches_aggregates_count_only_responses() -> None:
+    batch_sizes: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        size = len(body["jobs"])
+        batch_sizes.append(size)
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "received": size,
+                    "saved": size - 1,
+                    "duplicatesSkipped": 1,
+                    "failed": 0,
+                    "errors": [],
+                },
+                "message": "Jobs ingested successfully",
+                "timestamp": "2026-07-01T00:00:00Z",
+            },
+        )
+
+    client = IngestionClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+    result = client.submit_batches(_payload_with_jobs(12), batch_size=10)
+
+    assert batch_sizes == [10, 2]
+    assert result.received == 12
+    assert result.saved == 10
+    assert result.duplicates_skipped == 2
     assert result.failed == 0
 
 

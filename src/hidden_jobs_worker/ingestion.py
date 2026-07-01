@@ -78,7 +78,7 @@ class IngestionClient:
             LOGGER.info(
                 "ingestion batch completed",
                 extra={
-                    "run_id": result.run_id,
+                    "run_id": result.run_id or payload.worker.run_id,
                     "batch_number": index,
                     "received": received,
                     "saved": result.saved_count,

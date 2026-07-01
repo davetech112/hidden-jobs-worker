@@ -270,7 +270,7 @@ class IngestionItemResult(BaseModel):
 class IngestionResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    run_id: str = Field(alias="runId")
+    run_id: str | None = Field(default=None, alias="runId")
     accepted: int = 0
     rejected: int = 0
     duplicates: int = 0
