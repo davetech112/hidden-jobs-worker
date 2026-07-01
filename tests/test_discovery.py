@@ -204,6 +204,7 @@ def test_discovery_registration_client_parses_wrapped_response_and_posts_token()
                 "success": True,
                 "data": {
                     "action": "CREATED",
+                    "status": "VERIFIED",
                     "companyId": "company-1",
                     "message": "created",
                 },
@@ -219,7 +220,8 @@ def test_discovery_registration_client_parses_wrapped_response_and_posts_token()
 
     result = client.submit_career_board(_candidate())
 
-    assert result.status == "created"
+    assert result.action == "created"
+    assert result.status == "VERIFIED"
     assert result.submitted
     assert result.company_id == "company-1"
     assert str(seen_requests[0].url) == (
@@ -334,9 +336,9 @@ def test_workable_candidate_payload_is_valid() -> None:
 def test_discovery_registration_client_handles_created_updated_and_ignored() -> None:
     responses = iter(
         (
-            {"status": "created"},
-            {"status": "updated"},
-            {"status": "ignored", "message": "duplicate"},
+            {"action": "created", "status": "VERIFIED"},
+            {"action": "updated", "status": "ACTIVE"},
+            {"action": "ignored", "status": "DISCOVERED", "message": "duplicate"},
         )
     )
 
@@ -354,9 +356,29 @@ def test_discovery_registration_client_handles_created_updated_and_ignored() -> 
 
     assert created.submitted
     assert created.created
+    assert created.status == "VERIFIED"
     assert updated.submitted
     assert updated.updated
+    assert updated.status == "ACTIVE"
     assert ignored.ignored
+    assert ignored.status == "DISCOVERED"
+
+
+def test_discovery_registration_client_supports_legacy_status_action_response() -> None:
+    client = DiscoveryRegistrationClient(
+        _settings(),
+        httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json={"status": "created"})
+            )
+        ),
+    )
+
+    result = client.submit_career_board(_candidate())
+
+    assert result.action == "created"
+    assert result.status is None
+    assert result.created
 
 
 def test_discovery_registration_client_classifies_auth_failure() -> None:
