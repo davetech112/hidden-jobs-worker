@@ -1,10 +1,11 @@
 import httpx
+import pytest
 
 from hidden_jobs_worker.adapters.ashby import AshbyAdapter
 from hidden_jobs_worker.adapters.greenhouse import GreenhouseAdapter
 from hidden_jobs_worker.adapters.lever import LeverAdapter
 from hidden_jobs_worker.adapters.manager import AtsAdapterManager
-from hidden_jobs_worker.adapters.workable import WorkableAdapter
+from hidden_jobs_worker.adapters.workable import WorkableAdapter, WorkableAdapterError
 from hidden_jobs_worker.models import AtsType, CareerBoard, EmploymentType, RemoteType
 
 
@@ -217,13 +218,12 @@ def test_workable_adapter_parses_mocked_response() -> None:
     assert jobs[0].tags == ["customer success"]
 
 
-def test_workable_adapter_fetches_with_mocked_http_response() -> None:
+def test_workable_adapter_api_strategy_success() -> None:
     career_board = _career_board("WORKABLE", "workable-example")
+    requested_urls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == (
-            "https://apply.workable.com/api/v3/accounts/workable-example/jobs"
-        )
+        requested_urls.append(str(request.url))
         return httpx.Response(
             200,
             json={
@@ -239,7 +239,106 @@ def test_workable_adapter_fetches_with_mocked_http_response() -> None:
 
     adapter = WorkableAdapter(client=httpx.Client(transport=httpx.MockTransport(handler)))
 
-    assert adapter.fetch_jobs(career_board)[0].title == "Support Engineer"
+    jobs = adapter.fetch_jobs(career_board)
+
+    assert requested_urls == ["https://apply.workable.com/api/v3/accounts/workable-example/jobs"]
+    assert jobs[0].title == "Support Engineer"
+    assert jobs[0].source_name == "WORKABLE"
+    assert jobs[0].source_type == "ATS"
+
+
+def test_workable_adapter_api_404_then_public_page_embedded_json_success() -> None:
+    career_board = _career_board("WORKABLE", "huggingface")
+    requested_urls = []
+    html = """
+    <html>
+      <body>
+        <script id="__NEXT_DATA__" type="application/json">
+        {
+          "props": {
+            "pageProps": {
+              "jobs": [
+                {
+                  "shortcode": "ABC123",
+                  "title": "ML Engineer",
+                  "url": "https://apply.workable.com/huggingface/j/ABC123/",
+                  "location": {"city": "Remote"},
+                  "type": "Full-time",
+                  "description": "<p>Build open ML tools.</p>",
+                  "remote": true
+                }
+              ]
+            }
+          }
+        }
+        </script>
+      </body>
+    </html>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url).endswith("/api/v3/accounts/huggingface/jobs"):
+            return httpx.Response(404)
+        return httpx.Response(200, text=html)
+
+    adapter = WorkableAdapter(client=httpx.Client(transport=httpx.MockTransport(handler)))
+    jobs = adapter.fetch_jobs(career_board)
+
+    assert requested_urls == [
+        "https://apply.workable.com/api/v3/accounts/huggingface/jobs",
+        "https://apply.workable.com/huggingface/",
+    ]
+    assert jobs[0].title == "ML Engineer"
+    assert jobs[0].source_url.unicode_string() == (
+        "https://apply.workable.com/huggingface/j/ABC123/"
+    )
+    assert jobs[0].description_text == "Build open ML tools."
+
+
+def test_workable_adapter_html_fallback_job_links_huggingface_style() -> None:
+    career_board = _career_board("WORKABLE", "huggingface")
+    html = """
+    <html>
+      <body>
+        <a href="/huggingface/j/ABC123/">Research Engineer, Inference</a>
+        <a href="/huggingface/">Company profile</a>
+      </body>
+    </html>
+    """
+
+    jobs = WorkableAdapter().parse_jobs(
+        career_board,
+        html,
+        page_url="https://apply.workable.com/huggingface/",
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].title == "Research Engineer, Inference"
+    assert jobs[0].source_job_id == "ABC123"
+    assert jobs[0].source_url.unicode_string() == (
+        "https://apply.workable.com/huggingface/j/ABC123/"
+    )
+    assert jobs[0].source_name == "WORKABLE"
+    assert jobs[0].source_type == "ATS"
+
+
+def test_workable_adapter_all_strategies_fail_gives_clear_error() -> None:
+    career_board = _career_board("WORKABLE", "huggingface")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, request=request)
+
+    adapter = WorkableAdapter(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    with pytest.raises(WorkableAdapterError) as exc_info:
+        adapter.fetch_jobs(career_board)
+
+    message = str(exc_info.value)
+    assert "Workable fetch failed for board workable-board" in message
+    assert "https://apply.workable.com/api/v3/accounts/huggingface/jobs" in message
+    assert "https://apply.workable.com/huggingface/" in message
+    assert "https://apply.workable.com/huggingface/jobs" in message
 
 
 def test_ats_adapter_manager_routes_supported_ats_types() -> None:
