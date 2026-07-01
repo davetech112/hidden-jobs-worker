@@ -103,6 +103,7 @@ class CompanyCandidate(BaseModel):
     name: str
     website_url: HttpUrl = Field(alias="websiteUrl")
     careers_url: HttpUrl | None = Field(default=None, alias="careersUrl")
+    board_url: HttpUrl | None = Field(default=None, alias="boardUrl")
     ats_type: AtsType = Field(default=AtsType.UNKNOWN, alias="atsType")
     ats_slug: str | None = Field(default=None, alias="atsSlug")
     source: str

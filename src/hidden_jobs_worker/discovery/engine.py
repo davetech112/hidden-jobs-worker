@@ -59,6 +59,7 @@ class CompanyDiscoveryEngine:
             name=seed.name,
             websiteUrl=website_url,
             careersUrl=careers_url,
+            boardUrl=detection.matched_url,
             atsType=detection.ats_type,
             atsSlug=detection.ats_slug,
             source="static_seed",

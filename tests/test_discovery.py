@@ -15,6 +15,7 @@ from hidden_jobs_worker.discovery.engine import CompanyDiscoveryEngine
 from hidden_jobs_worker.discovery.registration import (
     DiscoveryRegistrationAuthError,
     DiscoveryRegistrationClient,
+    build_career_board_discovery_payload,
 )
 from hidden_jobs_worker.discovery.seeds import SeedCompany
 from hidden_jobs_worker.models import AtsType, CompanyCandidate
@@ -32,18 +33,35 @@ def _candidate(
     name: str = "Example",
     ats_type: str = "LEVER",
     ats_slug: str | None = "example",
+    board_url: str | None = None,
     confidence_score: float = 0.95,
 ) -> CompanyCandidate:
     return CompanyCandidate(
         name=name,
         websiteUrl="https://example.com",
         careersUrl="https://jobs.lever.co/example",
+        boardUrl=board_url,
         atsType=ats_type,
         atsSlug=ats_slug,
         source="static_seed",
         confidenceScore=confidence_score,
         discoveryNotes=["ATS board verified"],
     )
+
+
+BACKEND_DISCOVERY_PAYLOAD_FIELDS = {
+    "companyName",
+    "websiteUrl",
+    "careersUrl",
+    "boardUrl",
+    "atsType",
+    "atsSlug",
+    "confidenceScore",
+    "verificationMethod",
+    "verificationUrl",
+    "detectedFrom",
+    "discoveryNotes",
+}
 
 
 def test_detects_greenhouse_url() -> None:
@@ -185,7 +203,7 @@ def test_discovery_registration_client_parses_wrapped_response_and_posts_token()
             json={
                 "success": True,
                 "data": {
-                    "status": "created",
+                    "action": "CREATED",
                     "companyId": "company-1",
                     "message": "created",
                 },
@@ -211,6 +229,106 @@ def test_discovery_registration_client_parses_wrapped_response_and_posts_token()
     request_json = json.loads(seen_requests[0].content)
     assert request_json["atsType"] == "LEVER"
     assert request_json["confidenceScore"] == 0.95
+
+
+def test_serialized_discovery_payload_matches_backend_contract_exactly() -> None:
+    payload = build_career_board_discovery_payload(
+        CompanyCandidate(
+            name="Example Labs",
+            websiteUrl="https://example.com",
+            careersUrl="https://example.com/careers",
+            boardUrl="https://boards.greenhouse.io/example",
+            atsType="GREENHOUSE",
+            atsSlug="example",
+            source="homepage-link",
+            confidenceScore=0.95,
+            discoveryNotes=["Found from careers page."],
+        )
+    )
+
+    assert set(payload) == BACKEND_DISCOVERY_PAYLOAD_FIELDS
+    assert payload == {
+        "companyName": "Example Labs",
+        "websiteUrl": "https://example.com/",
+        "careersUrl": "https://example.com/careers",
+        "boardUrl": "https://boards.greenhouse.io/example",
+        "atsType": "GREENHOUSE",
+        "atsSlug": "example",
+        "confidenceScore": 0.95,
+        "verificationMethod": "greenhouse-board",
+        "verificationUrl": "https://boards.greenhouse.io/example",
+        "detectedFrom": "homepage-link",
+        "discoveryNotes": "Found from careers page.",
+    }
+
+
+def test_vercel_greenhouse_candidate_payload_is_valid() -> None:
+    payload = build_career_board_discovery_payload(
+        CompanyCandidate(
+            name="Vercel",
+            websiteUrl="https://vercel.com",
+            careersUrl="https://vercel.com/careers",
+            boardUrl="https://boards.greenhouse.io/vercel",
+            atsType="greenhouse",
+            atsSlug="vercel",
+            source="static_seed",
+            confidenceScore=0.95,
+            discoveryNotes=["ATS board verified"],
+        )
+    )
+
+    assert set(payload) == BACKEND_DISCOVERY_PAYLOAD_FIELDS
+    assert payload["companyName"] == "Vercel"
+    assert payload["boardUrl"] == "https://boards.greenhouse.io/vercel"
+    assert payload["atsType"] == "GREENHOUSE"
+    assert payload["atsSlug"] == "vercel"
+    assert payload["confidenceScore"] == 0.95
+    assert payload["verificationMethod"] == "greenhouse-board"
+    assert payload["verificationUrl"] == "https://boards.greenhouse.io/vercel"
+
+
+def test_ashby_candidate_payload_is_valid() -> None:
+    payload = build_career_board_discovery_payload(
+        CompanyCandidate(
+            name="Ashby Example",
+            websiteUrl="https://ashby.example",
+            careersUrl="https://jobs.ashbyhq.com/ashby-example",
+            atsType="ASHBY",
+            atsSlug="ashby-example",
+            source="static_seed",
+            confidenceScore=0.95,
+            discoveryNotes=["ATS board verified"],
+        )
+    )
+
+    assert set(payload) == BACKEND_DISCOVERY_PAYLOAD_FIELDS
+    assert payload["companyName"] == "Ashby Example"
+    assert payload["boardUrl"] == "https://jobs.ashbyhq.com/ashby-example"
+    assert payload["atsType"] == "ASHBY"
+    assert payload["verificationMethod"] == "ashby-board"
+    assert payload["verificationUrl"] == "https://jobs.ashbyhq.com/ashby-example"
+
+
+def test_workable_candidate_payload_is_valid() -> None:
+    payload = build_career_board_discovery_payload(
+        CompanyCandidate(
+            name="Workable Example",
+            websiteUrl="https://workable.example",
+            careersUrl="https://apply.workable.com/workable-example",
+            atsType="WORKABLE",
+            atsSlug="workable-example",
+            source="static_seed",
+            confidenceScore=0.95,
+            discoveryNotes=["ATS board verified"],
+        )
+    )
+
+    assert set(payload) == BACKEND_DISCOVERY_PAYLOAD_FIELDS
+    assert payload["companyName"] == "Workable Example"
+    assert payload["boardUrl"] == "https://apply.workable.com/workable-example"
+    assert payload["atsType"] == "WORKABLE"
+    assert payload["verificationMethod"] == "workable-board"
+    assert payload["verificationUrl"] == "https://apply.workable.com/workable-example"
 
 
 def test_discovery_registration_client_handles_created_updated_and_ignored() -> None:
@@ -290,6 +408,7 @@ def test_discovery_engine_detects_ats_from_careers_page_html() -> None:
 
     assert candidate.ats_type == AtsType.SMARTRECRUITERS
     assert candidate.ats_slug == "example"
+    assert str(candidate.board_url) == "https://jobs.smartrecruiters.com/example"
     assert candidate.confidence_score == 0.95
 
 
