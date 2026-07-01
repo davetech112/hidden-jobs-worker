@@ -1,7 +1,7 @@
 import logging
 
 import httpx
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 from hidden_jobs_worker.config import Settings
 from hidden_jobs_worker.logging import redact_headers
@@ -25,25 +25,48 @@ class DiscoveryRegistrationAuthError(DiscoveryRegistrationClientError):
 class DiscoveryRegistrationResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    status: str = Field(validation_alias=AliasChoices("status", "action"))
+    action: str
+    status: str | None = None
     message: str | None = None
     company_id: str | None = Field(default=None, alias="companyId")
 
-    @field_validator("status")
+    @model_validator(mode="before")
     @classmethod
-    def normalize_status(cls, value: str) -> str:
+    def migrate_legacy_status_action(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        if data.get("action") is None:
+            raw_status = data.get("status")
+            if (
+                isinstance(raw_status, str)
+                and raw_status.strip().lower() in EXPECTED_RESULT_STATUSES
+            ):
+                return {**data, "action": raw_status, "status": None}
+        return data
+
+    @field_validator("action")
+    @classmethod
+    def normalize_action(cls, value: str) -> str:
         stripped = value.strip().lower()
         if stripped not in EXPECTED_RESULT_STATUSES:
-            raise ValueError("status must be created, updated, or ignored")
+            raise ValueError("action must be created, updated, or ignored")
         return stripped
+
+    @field_validator("status")
+    @classmethod
+    def normalize_status(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().upper()
+        return stripped or None
 
     @property
     def created(self) -> bool:
-        return self.status == "created"
+        return self.action == "created"
 
     @property
     def updated(self) -> bool:
-        return self.status == "updated"
+        return self.action == "updated"
 
     @property
     def submitted(self) -> bool:
@@ -51,7 +74,7 @@ class DiscoveryRegistrationResult(BaseModel):
 
     @property
     def ignored(self) -> bool:
-        return self.status == "ignored"
+        return self.action == "ignored"
 
 
 class DiscoveryRegistrationClient:
