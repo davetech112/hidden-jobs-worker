@@ -8,19 +8,19 @@ from hidden_jobs_worker.adapters.manager import AtsAdapterManager
 from hidden_jobs_worker.config import Settings
 from hidden_jobs_worker.ingestion import IngestionClient
 from hidden_jobs_worker.models import (
-    CompanyRecord,
+    CareerBoard,
     IngestionPayload,
     JobRecord,
     WorkerInfo,
     build_run_id,
 )
-from hidden_jobs_worker.registry import CompanyRegistryClient
+from hidden_jobs_worker.registry import CareerBoardRegistryClient
 
 LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class DueCompanyRunResult:
+class DueCareerBoardRunResult:
     attempted: int = 0
     succeeded: int = 0
     failed: int = 0
@@ -29,18 +29,18 @@ class DueCompanyRunResult:
     submitted: int = 0
 
 
-def run_due_companies(
+def run_due_career_boards(
     settings: Settings,
     dry_run: bool = False,
-    registry_client: CompanyRegistryClient | None = None,
+    registry_client: CareerBoardRegistryClient | None = None,
     ingestion_client: IngestionClient | None = None,
     adapter_manager: AtsAdapterManager | None = None,
     sleep_func: Callable[[float], None] = time.sleep,
-) -> DueCompanyRunResult:
-    registry = registry_client or CompanyRegistryClient(settings)
+) -> DueCareerBoardRunResult:
+    registry = registry_client or CareerBoardRegistryClient(settings)
     ingestion = ingestion_client or IngestionClient(settings)
     adapters = adapter_manager or AtsAdapterManager()
-    companies = registry.get_due_companies()
+    career_boards = registry.get_due_career_boards()
 
     attempted = 0
     succeeded = 0
@@ -49,47 +49,58 @@ def run_due_companies(
     discovered = 0
     submitted = 0
 
-    for index, company in enumerate(companies):
+    for index, career_board in enumerate(career_boards):
         if index > 0 and settings.worker_company_request_delay_seconds > 0:
             sleep_func(settings.worker_company_request_delay_seconds)
 
-        adapter = adapters.get_adapter(company)
+        adapter = adapters.get_adapter(career_board)
         if adapter is None:
             skipped += 1
             LOGGER.info(
-                "company skipped because atsType is unsupported",
-                extra={"company_id": company.id, "ats_type": company.ats_type},
+                "career board skipped because atsType is unsupported",
+                extra={
+                    "board_id": career_board.board_id,
+                    "company_id": career_board.company_id,
+                    "ats_type": career_board.ats_type,
+                },
             )
             continue
 
         attempted += 1
-        company_ingested = 0
+        board_ingested = 0
         try:
             if not dry_run:
-                ingestion.start_crawl(company.id)
+                ingestion.start_career_board_crawl(career_board.board_id)
 
-            jobs = adapter.fetch_jobs(company)
+            jobs = adapter.fetch_jobs(career_board)
             discovered += len(jobs)
             LOGGER.info(
-                "company jobs discovered",
+                "career board jobs discovered",
                 extra={
-                    "company_id": company.id,
-                    "company_name": company.name,
-                    "ats_type": company.ats_type,
+                    "board_id": career_board.board_id,
+                    "company_id": career_board.company_id,
+                    "company_name": career_board.company_name,
+                    "ats_type": career_board.ats_type,
                     "discovered_count": len(jobs),
                     "dry_run": dry_run,
                 },
             )
 
             if not dry_run and jobs:
-                run_id = build_run_id(f"{company.ats_type.lower()}-{company.id}")
-                payload = _build_company_payload(settings, company, run_id, jobs, adapter)
+                run_id = build_run_id(f"{career_board.ats_type.lower()}-{career_board.board_id}")
+                payload = _build_career_board_payload(
+                    settings,
+                    career_board,
+                    run_id,
+                    jobs,
+                    adapter,
+                )
                 ingestion_result = ingestion.submit_batches(
                     payload,
                     settings.worker_ingest_batch_size,
                 )
-                company_ingested = ingestion_result.saved
-                submitted += company_ingested
+                board_ingested = ingestion_result.saved
+                submitted += board_ingested
                 if ingestion_result.has_failures:
                     raise RuntimeError(
                         "one or more ingestion batches failed: "
@@ -97,28 +108,32 @@ def run_due_companies(
                     )
 
             if not dry_run:
-                ingestion.mark_crawl_success(
-                    company.id,
-                    jobs_found=len(jobs),
-                    jobs_ingested=company_ingested,
-                )
+                ingestion.mark_career_board_crawl_success(career_board.board_id)
             succeeded += 1
         except Exception as exc:
             failed += 1
             if not dry_run:
                 try:
-                    ingestion.mark_crawl_failure(company.id, str(exc))
+                    ingestion.mark_career_board_crawl_failure(career_board.board_id, str(exc))
                 except Exception:
                     LOGGER.exception(
-                        "company crawl failure reporting failed",
-                        extra={"company_id": company.id, "company_name": company.name},
+                        "career board crawl failure reporting failed",
+                        extra={
+                            "board_id": career_board.board_id,
+                            "company_id": career_board.company_id,
+                            "company_name": career_board.company_name,
+                        },
                     )
             LOGGER.exception(
-                "company crawl failed",
-                extra={"company_id": company.id, "company_name": company.name},
+                "career board crawl failed",
+                extra={
+                    "board_id": career_board.board_id,
+                    "company_id": career_board.company_id,
+                    "company_name": career_board.company_name,
+                },
             )
 
-    return DueCompanyRunResult(
+    return DueCareerBoardRunResult(
         attempted=attempted,
         succeeded=succeeded,
         failed=failed,
@@ -128,9 +143,9 @@ def run_due_companies(
     )
 
 
-def _build_company_payload(
+def _build_career_board_payload(
     settings: Settings,
-    company: CompanyRecord,
+    career_board: CareerBoard,
     run_id: str,
     job_batch: list[JobRecord],
     adapter: AtsAdapter,
@@ -141,6 +156,6 @@ def _build_company_payload(
             version=settings.worker_version,
             runId=run_id,
         ),
-        source=adapter.source_info(company),
+        source=adapter.source_info(career_board),
         jobs=job_batch,
     )

@@ -15,7 +15,7 @@ from hidden_jobs_worker.models import (
     WorkerInfo,
     build_run_id,
 )
-from hidden_jobs_worker.runner import run_due_companies
+from hidden_jobs_worker.runner import run_due_career_boards
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,14 +32,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Fetch and parse without ingesting.",
     )
 
-    run_due_companies_command = subparsers.add_parser(
-        "run-due-companies",
-        help="Fetch due companies, crawl supported ATS boards, and ingest discovered jobs.",
+    run_due_career_boards_command = subparsers.add_parser(
+        "run-due-career-boards",
+        aliases=["run-due-companies"],
+        help="Fetch due career boards, crawl supported ATS boards, and ingest discovered jobs.",
     )
-    run_due_companies_command.add_argument(
+    run_due_career_boards_command.add_argument(
         "--dry-run",
         action="store_true",
-        help="Fetch and parse due companies without ingesting jobs.",
+        help="Fetch and parse due career boards without ingesting jobs.",
     )
 
     discover_companies = subparsers.add_parser(
@@ -70,11 +71,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "run-source":
         return _run_source(args.source, dry_run=args.dry_run)
-    if args.command == "run-due-companies":
+    if args.command in {"run-due-career-boards", "run-due-companies"}:
         settings = get_settings()
-        result = run_due_companies(settings, dry_run=args.dry_run)
+        result = run_due_career_boards(settings, dry_run=args.dry_run)
         LOGGER.info(
-            "due company run completed",
+            "due career board run completed",
             extra={
                 "attempted": result.attempted,
                 "succeeded": result.succeeded,

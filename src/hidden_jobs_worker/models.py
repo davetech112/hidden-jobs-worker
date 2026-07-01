@@ -97,6 +97,40 @@ class CompanyRegistryResult(BaseModel):
     message: str | None = None
 
 
+class CareerBoard(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    board_id: str = Field(alias="boardId")
+    board_url: HttpUrl = Field(alias="boardUrl")
+    ats_type: AtsType = Field(alias="atsType")
+    ats_slug: str | None = Field(default=None, alias="atsSlug")
+    company_id: str = Field(alias="companyId")
+    company_name: str = Field(alias="companyName")
+    website_url: HttpUrl | None = Field(default=None, alias="websiteUrl")
+    careers_url: HttpUrl | None = Field(default=None, alias="careersUrl")
+    confidence_score: float = Field(default=0.0, alias="confidenceScore", ge=0.0, le=1.0)
+    last_crawled_at: datetime | None = Field(default=None, alias="lastCrawledAt")
+    failure_count: int = Field(default=0, alias="failureCount", ge=0)
+
+    @field_validator("ats_type", mode="before")
+    @classmethod
+    def normalize_ats_type(cls, value: object) -> object:
+        return _normalize_enum_value(value)
+
+    @field_validator("ats_slug")
+    @classmethod
+    def normalize_ats_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().strip("/")
+        return stripped or None
+
+
+class CareerBoardRegistryResult(BaseModel):
+    data: list[CareerBoard]
+    message: str | None = None
+
+
 class CompanyCandidate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

@@ -14,7 +14,7 @@ This repository contains the initial Python worker foundation:
 - Structured logging setup with sensitive header redaction helpers.
 - Pydantic models for the ingestion contract.
 - Spring Boot ingestion client for `POST /api/internal/jobs/ingest`.
-- Company registry client for due-company crawls.
+- CareerBoard registry client for due board crawls.
 - Batch-safe ingestion with crawl lifecycle reporting for due-company runs.
 - Source adapter interface, Remotive adapter, Greenhouse adapter, and Lever adapter.
 - CLI command for manually running one source.
@@ -57,16 +57,16 @@ Fetch Remotive jobs and submit bounded batches to Spring Boot:
 hidden-jobs-worker run-source remotive
 ```
 
-Fetch due companies from Spring Boot, crawl supported ATS boards, and submit discovered jobs:
+Fetch due CareerBoards from Spring Boot, crawl supported ATS boards, and submit discovered jobs:
 
 ```bash
-hidden-jobs-worker run-due-companies
+hidden-jobs-worker run-due-career-boards
 ```
 
-Fetch and parse due companies without submitting jobs:
+Fetch and parse due CareerBoards without submitting jobs:
 
 ```bash
-hidden-jobs-worker run-due-companies --dry-run
+hidden-jobs-worker run-due-career-boards --dry-run
 ```
 
 Discover company ATS metadata from a static seed file without registering candidates:

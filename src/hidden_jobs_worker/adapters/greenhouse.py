@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from hidden_jobs_worker.adapters.ats import AtsAdapter
-from hidden_jobs_worker.models import AtsType, CompanyRecord, JobRecord, RemoteType
+from hidden_jobs_worker.models import AtsType, CareerBoard, JobRecord, RemoteType
 
 
 class _TextExtractor(HTMLParser):
@@ -30,44 +30,50 @@ class GreenhouseAdapter(AtsAdapter):
     def __init__(self, client: httpx.Client | None = None, timeout_seconds: float = 15.0) -> None:
         self._client = client or httpx.Client(timeout=timeout_seconds)
 
-    def fetch_jobs(self, company: CompanyRecord) -> list[JobRecord]:
-        if not company.ats_slug:
-            raise ValueError(f"company {company.id} is missing atsSlug")
+    def fetch_jobs(self, career_board: CareerBoard) -> list[JobRecord]:
+        if not career_board.ats_slug:
+            raise ValueError(f"career board {career_board.board_id} is missing atsSlug")
         response = self._client.get(
-            f"{self.base_url}/v1/boards/{company.ats_slug}/jobs",
+            f"{self.base_url}/v1/boards/{career_board.ats_slug}/jobs",
             params={"content": "true"},
         )
         response.raise_for_status()
-        return self.parse_jobs(company, response.json())
+        return self.parse_jobs(career_board, response.json())
 
-    def parse_jobs(self, company: CompanyRecord, payload: Any) -> list[JobRecord]:
+    def parse_jobs(self, career_board: CareerBoard, payload: Any) -> list[JobRecord]:
         if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
             raise ValueError("Greenhouse payload missing jobs array")
-        return [self._parse_job(company, job) for job in payload["jobs"] if isinstance(job, dict)]
+        return [
+            self._parse_job(career_board, job) for job in payload["jobs"] if isinstance(job, dict)
+        ]
 
-    def _parse_job(self, company: CompanyRecord, raw_job: dict[str, Any]) -> JobRecord:
+    def _parse_job(self, career_board: CareerBoard, raw_job: dict[str, Any]) -> JobRecord:
         content = _optional_str(raw_job.get("content"))
         return JobRecord(
             sourceName=self.source_name,
             sourceJobId=str(raw_job["id"]) if raw_job.get("id") is not None else None,
-            sourceUrl=_greenhouse_job_url(company, raw_job),
+            sourceUrl=_greenhouse_job_url(career_board, raw_job),
             title=raw_job.get("title") or "",
-            companyName=company.name,
+            companyName=career_board.company_name,
             locationText=_greenhouse_location(raw_job.get("location")),
             remoteType=_remote_type_from_location(_greenhouse_location(raw_job.get("location"))),
             descriptionText=_html_to_text(content) if content else None,
             descriptionHtml=content,
             postedAt=_parse_datetime(raw_job.get("updated_at")),
-            raw={"source": self.source_name, "companyId": company.id},
+            raw={
+                "source": self.source_name,
+                "companyId": career_board.company_id,
+                "boardId": career_board.board_id,
+            },
         )
 
 
-def _greenhouse_job_url(company: CompanyRecord, raw_job: dict[str, Any]) -> str:
+def _greenhouse_job_url(career_board: CareerBoard, raw_job: dict[str, Any]) -> str:
     url = raw_job.get("absolute_url")
     if isinstance(url, str) and url.strip():
         return url
-    if company.ats_slug and raw_job.get("id") is not None:
-        return f"https://boards.greenhouse.io/{company.ats_slug}/jobs/{raw_job['id']}"
+    if career_board.ats_slug and raw_job.get("id") is not None:
+        return f"https://boards.greenhouse.io/{career_board.ats_slug}/jobs/{raw_job['id']}"
     raise ValueError("Greenhouse job missing canonical URL")
 
 

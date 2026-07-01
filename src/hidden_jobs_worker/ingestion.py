@@ -89,18 +89,15 @@ class IngestionClient:
 
         return summary
 
-    def start_crawl(self, company_id: str) -> None:
-        self._post(f"/api/internal/companies/{company_id}/crawl/start", {})
+    def start_career_board_crawl(self, board_id: str) -> None:
+        self._post(f"/api/internal/career-boards/{board_id}/crawl/start", {})
 
-    def mark_crawl_success(self, company_id: str, jobs_found: int, jobs_ingested: int) -> None:
-        self._post(
-            f"/api/internal/companies/{company_id}/crawl/success",
-            {"jobsFound": jobs_found, "jobsIngested": jobs_ingested},
-        )
+    def mark_career_board_crawl_success(self, board_id: str) -> None:
+        self._post(f"/api/internal/career-boards/{board_id}/crawl/success", {})
 
-    def mark_crawl_failure(self, company_id: str, error_message: str) -> None:
+    def mark_career_board_crawl_failure(self, board_id: str, error_message: str) -> None:
         self._post(
-            f"/api/internal/companies/{company_id}/crawl/failure",
+            f"/api/internal/career-boards/{board_id}/crawl/failure",
             {"errorMessage": error_message},
         )
 
