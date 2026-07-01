@@ -113,6 +113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "company discovery submission completed",
                 extra={
                     "submitted": submit_summary["submitted"],
+                    "updated": submit_summary["updated"],
                     "ignored": submit_summary["ignored"],
                     "skipped": submit_summary["skipped"],
                     "failed": submit_summary["failed"],
@@ -171,7 +172,8 @@ def _submit_discovery_candidates(
     min_confidence: float,
     registration_client: DiscoveryRegistrationClient,
 ) -> dict[str, int]:
-    summary = {"submitted": 0, "ignored": 0, "skipped": 0, "failed": 0}
+    summary = {"submitted": 0, "updated": 0, "ignored": 0, "skipped": 0, "failed": 0}
+    seen_board_keys: set[tuple[AtsType, str | None]] = set()
 
     for candidate in candidates:
         if candidate.confidence_score < min_confidence or candidate.ats_type == AtsType.UNKNOWN:
@@ -183,6 +185,19 @@ def _submit_discovery_candidates(
                     "ats_type": candidate.ats_type,
                     "confidence": candidate.confidence_score,
                     "min_confidence": min_confidence,
+                },
+            )
+            continue
+
+        board_key = (candidate.ats_type, candidate.ats_slug)
+        if board_key in seen_board_keys:
+            summary["skipped"] += 1
+            LOGGER.info(
+                "skipping duplicate discovery candidate",
+                extra={
+                    "candidate_name": candidate.name,
+                    "ats_type": candidate.ats_type,
+                    "ats_slug": candidate.ats_slug,
                 },
             )
             continue
@@ -201,8 +216,11 @@ def _submit_discovery_candidates(
             )
             continue
 
-        if result.submitted:
+        seen_board_keys.add(board_key)
+        if result.created:
             summary["submitted"] += 1
+        elif result.updated:
+            summary["updated"] += 1
         elif result.ignored:
             summary["ignored"] += 1
 

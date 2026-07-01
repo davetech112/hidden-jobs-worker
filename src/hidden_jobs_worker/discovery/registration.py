@@ -37,8 +37,16 @@ class DiscoveryRegistrationResult(BaseModel):
         return stripped
 
     @property
+    def created(self) -> bool:
+        return self.status == "created"
+
+    @property
+    def updated(self) -> bool:
+        return self.status == "updated"
+
+    @property
     def submitted(self) -> bool:
-        return self.status in {"created", "updated"}
+        return self.created or self.updated
 
     @property
     def ignored(self) -> bool:
