@@ -2,14 +2,22 @@ import httpx
 import pytest
 
 from hidden_jobs_worker.adapters.ashby import AshbyAdapter
+from hidden_jobs_worker.adapters.comeet import ComeetAdapter, ComeetAdapterError
 from hidden_jobs_worker.adapters.greenhouse import GreenhouseAdapter
 from hidden_jobs_worker.adapters.lever import LeverAdapter
 from hidden_jobs_worker.adapters.manager import AtsAdapterManager
+from hidden_jobs_worker.adapters.personio import PersonioAdapter, PersonioAdapterError
+from hidden_jobs_worker.adapters.recruitee import RecruiteeAdapter, RecruiteeAdapterError
+from hidden_jobs_worker.adapters.smartrecruiters import (
+    SmartRecruitersAdapter,
+    SmartRecruitersAdapterError,
+)
+from hidden_jobs_worker.adapters.teamtailor import TeamtailorAdapter, TeamtailorAdapterError
 from hidden_jobs_worker.adapters.workable import WorkableAdapter, WorkableAdapterError
 from hidden_jobs_worker.models import AtsType, CareerBoard, EmploymentType, RemoteType
 
 
-def _career_board(ats_type: str, ats_slug: str = "example") -> CareerBoard:
+def _career_board(ats_type: str, ats_slug: str | None = "example") -> CareerBoard:
     return CareerBoard(
         boardId=f"{ats_type.lower()}-board",
         boardUrl=f"https://boards.example.com/{ats_slug}",
@@ -341,15 +349,216 @@ def test_workable_adapter_all_strategies_fail_gives_clear_error() -> None:
     assert "https://apply.workable.com/huggingface/jobs" in message
 
 
+def test_smartrecruiters_adapter_parses_mocked_response() -> None:
+    jobs = SmartRecruitersAdapter().parse_jobs(
+        _career_board("SMARTRECRUITERS"),
+        {
+            "content": [
+                {
+                    "id": "sr-1",
+                    "name": "Backend Engineer",
+                    "releasedUrl": "https://jobs.smartrecruiters.com/example/sr-1",
+                    "location": {"city": "Remote"},
+                    "typeOfEmployment": "Full-time",
+                    "jobAd": {"sections": {"jobDescription": {"text": "<p>Build APIs.</p>"}}},
+                }
+            ]
+        },
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].source_name == "SMARTRECRUITERS"
+    assert jobs[0].source_type == "ATS"
+    assert jobs[0].source_job_id == "sr-1"
+    assert jobs[0].remote_type == RemoteType.REMOTE
+    assert jobs[0].employment_type == EmploymentType.FULL_TIME
+    assert jobs[0].description_text == "Build APIs."
+
+
+def test_teamtailor_adapter_parses_mocked_response() -> None:
+    jobs = TeamtailorAdapter().parse_jobs(
+        _career_board("TEAMTAILOR"),
+        {
+            "data": [
+                {
+                    "id": "tt-1",
+                    "attributes": {
+                        "title": "Product Designer",
+                        "body": "<p>Design product workflows.</p>",
+                        "location": "Remote",
+                        "employmentType": "Full-time",
+                    },
+                    "links": {
+                        "careersite-job-url": "https://example.teamtailor.com/jobs/tt-1"
+                    },
+                }
+            ]
+        },
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].source_name == "TEAMTAILOR"
+    assert jobs[0].source_type == "ATS"
+    assert jobs[0].source_job_id == "tt-1"
+    assert jobs[0].remote_type == RemoteType.REMOTE
+    assert jobs[0].description_text == "Design product workflows."
+
+
+def test_recruitee_adapter_parses_mocked_response() -> None:
+    jobs = RecruiteeAdapter().parse_jobs(
+        _career_board("RECRUITEE"),
+        {
+            "offers": [
+                {
+                    "id": 123,
+                    "title": "Data Engineer",
+                    "careers_url": "https://example.recruitee.com/o/data-engineer",
+                    "location": "Remote",
+                    "employmentType": "Full-time",
+                    "description": "<p>Build data systems.</p>",
+                }
+            ]
+        },
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].source_name == "RECRUITEE"
+    assert jobs[0].source_type == "ATS"
+    assert jobs[0].source_job_id == "123"
+    assert jobs[0].employment_type == EmploymentType.FULL_TIME
+    assert jobs[0].description_text == "Build data systems."
+
+
+def test_comeet_adapter_parses_mocked_response() -> None:
+    jobs = ComeetAdapter().parse_jobs(
+        _career_board("COMEET"),
+        {
+            "positions": [
+                {
+                    "uid": "cm-1",
+                    "name": "Platform Engineer",
+                    "url_active_page": "https://www.comeet.com/jobs/example/cm-1",
+                    "location": {"name": "Remote"},
+                    "employment_type": "Full-time",
+                    "description": "<p>Build platform tools.</p>",
+                }
+            ]
+        },
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].source_name == "COMEET"
+    assert jobs[0].source_type == "ATS"
+    assert jobs[0].source_job_id == "cm-1"
+    assert jobs[0].remote_type == RemoteType.REMOTE
+    assert jobs[0].description_text == "Build platform tools."
+
+
+def test_personio_adapter_parses_mocked_xml_response() -> None:
+    jobs = PersonioAdapter().parse_jobs(
+        _career_board("PERSONIO"),
+        """
+        <workzag-jobs>
+          <position>
+            <id>pn-1</id>
+            <name>Support Engineer</name>
+            <jobUrl>https://example.jobs.personio.com/job/pn-1</jobUrl>
+            <office>Remote</office>
+            <employmentType>Full-time</employmentType>
+            <jobDescriptions><p>Support customers.</p></jobDescriptions>
+          </position>
+        </workzag-jobs>
+        """,
+    )
+
+    assert len(jobs) == 1
+    assert jobs[0].source_name == "PERSONIO"
+    assert jobs[0].source_type == "ATS"
+    assert jobs[0].source_job_id == "pn-1"
+    assert jobs[0].employment_type == EmploymentType.FULL_TIME
+    assert jobs[0].description_text == "Support customers."
+
+
+def test_adapter_pack_1_fetches_with_mocked_http_responses() -> None:
+    cases = [
+        (
+            SmartRecruitersAdapter,
+            "SMARTRECRUITERS",
+            "https://api.smartrecruiters.com/v1/companies/example/postings",
+            {"content": [{"id": "sr-1", "name": "Backend", "releasedUrl": "https://sr.test/job"}]},
+        ),
+        (
+            RecruiteeAdapter,
+            "RECRUITEE",
+            "https://example.recruitee.com/api/offers/",
+            {"offers": [{"id": "rc-1", "title": "Backend", "careers_url": "https://rc.test/job"}]},
+        ),
+        (
+            ComeetAdapter,
+            "COMEET",
+            "https://www.comeet.com/careers-api/2.0/company/example/positions",
+            {
+                "positions": [
+                    {"uid": "cm-1", "name": "Backend", "url_active_page": "https://cm.test/job"}
+                ]
+            },
+        ),
+    ]
+
+    for adapter_class, ats_type, expected_url, payload in cases:
+
+        def handler(
+            request: httpx.Request,
+            *,
+            expected_url: str = expected_url,
+            payload: dict = payload,
+        ) -> httpx.Response:
+            assert str(request.url) == expected_url
+            return httpx.Response(200, json=payload)
+
+        adapter = adapter_class(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+        assert adapter.fetch_jobs(_career_board(ats_type))[0].title == "Backend"
+
+
+def test_adapter_pack_1_unsupported_variants_fail_clearly() -> None:
+    cases = [
+        (SmartRecruitersAdapter(), SmartRecruitersAdapterError, "SMARTRECRUITERS"),
+        (TeamtailorAdapter(), TeamtailorAdapterError, "TEAMTAILOR"),
+        (RecruiteeAdapter(), RecruiteeAdapterError, "RECRUITEE"),
+        (ComeetAdapter(), ComeetAdapterError, "COMEET"),
+        (PersonioAdapter(), PersonioAdapterError, "PERSONIO"),
+    ]
+
+    for adapter, error_type, ats_type in cases:
+        with pytest.raises(error_type, match="atsSlug"):
+            adapter.fetch_jobs(_career_board(ats_type, ats_slug=None))
+
+
 def test_ats_adapter_manager_routes_supported_ats_types() -> None:
     manager = AtsAdapterManager(
-        adapters=[GreenhouseAdapter(), LeverAdapter(), AshbyAdapter(), WorkableAdapter()]
+        adapters=[
+            GreenhouseAdapter(),
+            LeverAdapter(),
+            AshbyAdapter(),
+            WorkableAdapter(),
+            SmartRecruitersAdapter(),
+            TeamtailorAdapter(),
+            RecruiteeAdapter(),
+            ComeetAdapter(),
+            PersonioAdapter(),
+        ]
     )
 
     assert manager.get_adapter(_career_board("GREENHOUSE")).ats_type == AtsType.GREENHOUSE
     assert manager.get_adapter(_career_board("LEVER")).ats_type == AtsType.LEVER
     assert manager.get_adapter(_career_board("ASHBY")).ats_type == AtsType.ASHBY
     assert manager.get_adapter(_career_board("WORKABLE")).ats_type == AtsType.WORKABLE
+    assert manager.get_adapter(_career_board("SMARTRECRUITERS")).ats_type == AtsType.SMARTRECRUITERS
+    assert manager.get_adapter(_career_board("TEAMTAILOR")).ats_type == AtsType.TEAMTAILOR
+    assert manager.get_adapter(_career_board("RECRUITEE")).ats_type == AtsType.RECRUITEE
+    assert manager.get_adapter(_career_board("COMEET")).ats_type == AtsType.COMEET
+    assert manager.get_adapter(_career_board("PERSONIO")).ats_type == AtsType.PERSONIO
     assert manager.get_adapter(_career_board("CUSTOM")) is None
 
 
@@ -358,6 +567,11 @@ def test_default_ats_adapter_manager_routes_ashby_and_workable() -> None:
 
     assert manager.get_adapter(_career_board("ASHBY")).ats_type == AtsType.ASHBY
     assert manager.get_adapter(_career_board("WORKABLE")).ats_type == AtsType.WORKABLE
+    assert manager.get_adapter(_career_board("SMARTRECRUITERS")).ats_type == AtsType.SMARTRECRUITERS
+    assert manager.get_adapter(_career_board("TEAMTAILOR")).ats_type == AtsType.TEAMTAILOR
+    assert manager.get_adapter(_career_board("RECRUITEE")).ats_type == AtsType.RECRUITEE
+    assert manager.get_adapter(_career_board("COMEET")).ats_type == AtsType.COMEET
+    assert manager.get_adapter(_career_board("PERSONIO")).ats_type == AtsType.PERSONIO
 
 
 def test_ats_job_record_payload_includes_source_name_and_source_type() -> None:
@@ -379,3 +593,59 @@ def test_ats_job_record_payload_includes_source_name_and_source_type() -> None:
 
     assert payload["sourceName"] == "ASHBY"
     assert payload["sourceType"] == "ATS"
+
+
+def test_adapter_pack_1_job_record_payload_includes_source_name_and_source_type() -> None:
+    cases = [
+        (
+            SmartRecruitersAdapter(),
+            "SMARTRECRUITERS",
+            {
+                "content": [
+                    {"id": "sr-1", "name": "Backend", "releasedUrl": "https://sr.test/job"}
+                ]
+            },
+        ),
+        (
+            TeamtailorAdapter(),
+            "TEAMTAILOR",
+            {
+                "data": [
+                    {
+                        "id": "tt-1",
+                        "attributes": {"title": "Backend"},
+                        "links": {"careersite-job-url": "https://tt.test/job"},
+                    }
+                ]
+            },
+        ),
+        (
+            RecruiteeAdapter(),
+            "RECRUITEE",
+            {"offers": [{"id": "rc-1", "title": "Backend", "careers_url": "https://rc.test/job"}]},
+        ),
+        (
+            ComeetAdapter(),
+            "COMEET",
+            {
+                "positions": [
+                    {"uid": "cm-1", "name": "Backend", "url_active_page": "https://cm.test/job"}
+                ]
+            },
+        ),
+        (
+            PersonioAdapter(),
+            "PERSONIO",
+            (
+                "<workzag-jobs><position><id>pn-1</id><name>Backend</name>"
+                "<jobUrl>https://pn.test/job</jobUrl></position></workzag-jobs>"
+            ),
+        ),
+    ]
+
+    for adapter, ats_type, payload in cases:
+        job = adapter.parse_jobs(_career_board(ats_type), payload)[0]
+        serialized = job.model_dump(mode="json", by_alias=True)
+
+        assert serialized["sourceName"] == ats_type
+        assert serialized["sourceType"] == "ATS"
