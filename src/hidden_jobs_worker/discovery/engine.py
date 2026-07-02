@@ -52,9 +52,24 @@ class CompanyDiscoveryEngine:
             careers_url or website_url,
             careers_page.html if careers_page else None,
         )
+        if detection.suspicious_reason:
+            LOGGER.info(
+                "ATS detection downgraded because slug is suspicious",
+                extra={
+                    "company_name": seed.name,
+                    "website_url": website_url,
+                    "matched_url": detection.matched_url,
+                    "reason": detection.suspicious_reason,
+                },
+            )
+            notes.append(detection.suspicious_reason)
         notes.append(f"ATS detection: {detection.ats_type}")
 
-        verified = self._board_verifier.verify(detection.ats_type, detection.ats_slug)
+        verified = (
+            self._board_verifier.verify(detection.ats_type, detection.ats_slug)
+            if detection.ats_type != AtsType.UNKNOWN
+            else False
+        )
         if verified:
             notes.append("ATS board verified")
             confidence = 0.95

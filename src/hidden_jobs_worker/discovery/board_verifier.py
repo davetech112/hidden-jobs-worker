@@ -1,6 +1,6 @@
 import httpx
 
-from hidden_jobs_worker.discovery.ats_detector import sanitize_ats_slug
+from hidden_jobs_worker.discovery.ats_detector import is_suspicious_ats_slug, sanitize_ats_slug
 from hidden_jobs_worker.models import AtsType
 
 
@@ -10,7 +10,7 @@ class BoardVerifier:
 
     def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
         ats_slug = sanitize_ats_slug(ats_slug)
-        if not ats_slug:
+        if not ats_slug or is_suspicious_ats_slug(ats_slug):
             return False
         if ats_type == AtsType.GREENHOUSE:
             return self._is_reachable(
