@@ -67,6 +67,7 @@ BACKEND_DISCOVERY_PAYLOAD_FIELDS = {
 def test_default_discovery_seed_file_parses() -> None:
     companies = load_seed_companies("discovery/seeds/companies.yml")
     names = {company.name for company in companies}
+    companies_by_name = {company.name: company for company in companies}
 
     assert len(companies) >= 30
     assert {
@@ -77,6 +78,38 @@ def test_default_discovery_seed_file_parses() -> None:
         "Personio",
     }.issubset(names)
     assert all(str(company.website_url).startswith("https://") for company in companies)
+    assert str(companies_by_name["Bosch"].website_url) == "https://www.bosch.com/"
+    assert str(companies_by_name["Bosch"].board_url) == (
+        "https://jobs.smartrecruiters.com/BoschGroup"
+    )
+    assert str(companies_by_name["Mentimeter"].board_url) == (
+        "https://mentimeter.teamtailor.com/jobs"
+    )
+    assert str(companies_by_name["Recruitee"].board_url) == "https://recruitee.recruitee.com/"
+    assert str(companies_by_name["monday.com"].board_url) == (
+        "https://www.comeet.com/careers-api/2.0/company/monday/positions"
+    )
+    assert str(companies_by_name["Personio"].board_url) == (
+        "https://personio.jobs.personio.com/xml"
+    )
+
+
+def test_seed_file_parses_company_name_and_direct_urls(tmp_path) -> None:
+    seed_file = tmp_path / "companies.yml"
+    seed_file.write_text(
+        "- companyName: Direct Example\n"
+        "  websiteUrl: https://example.com\n"
+        "  careersUrl: https://jobs.lever.co/example\n"
+        "  boardUrl: https://jobs.lever.co/example\n",
+        encoding="utf-8",
+    )
+
+    companies = load_seed_companies(seed_file)
+
+    assert companies[0].name == "Direct Example"
+    assert str(companies[0].website_url) == "https://example.com/"
+    assert str(companies[0].careers_url) == "https://jobs.lever.co/example"
+    assert str(companies[0].board_url) == "https://jobs.lever.co/example"
 
 
 def test_detects_greenhouse_url() -> None:
@@ -575,6 +608,94 @@ def test_discovery_engine_detects_ats_from_final_careers_url() -> None:
 
     assert candidate.ats_type == AtsType.LEVER
     assert candidate.ats_slug == "example"
+    assert candidate.confidence_score == 0.95
+
+
+def test_discovery_engine_uses_direct_board_url_before_homepage_probe() -> None:
+    class FailingCareersFinder:
+        def find_page(self, website_url: str) -> CareersPage:
+            raise AssertionError("direct board URL must skip homepage probing")
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            return ats_type == AtsType.RECRUITEE and ats_slug == "example"
+
+    engine = CompanyDiscoveryEngine(
+        careers_finder=FailingCareersFinder(),
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidate = engine.discover_company(
+        SeedCompany(
+            companyName="Direct Example",
+            websiteUrl="https://example.com",
+            boardUrl="https://example.recruitee.com",
+        )
+    )
+
+    assert str(candidate.website_url) == "https://example.com/"
+    assert str(candidate.board_url) == "https://example.recruitee.com/"
+    assert candidate.ats_type == AtsType.RECRUITEE
+    assert candidate.ats_slug == "example"
+    assert candidate.confidence_score == 0.95
+
+
+def test_discovery_engine_uses_direct_careers_url_for_detection() -> None:
+    class FailingCareersFinder:
+        def find_page(self, website_url: str) -> CareersPage:
+            raise AssertionError("direct careers URL must skip homepage probing")
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            return ats_type == AtsType.TEAMTAILOR and ats_slug == "example"
+
+    engine = CompanyDiscoveryEngine(
+        careers_finder=FailingCareersFinder(),
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidate = engine.discover_company(
+        SeedCompany(
+            companyName="Direct Careers Example",
+            websiteUrl="https://example.com",
+            careersUrl="https://example.teamtailor.com/jobs",
+        )
+    )
+
+    assert str(candidate.website_url) == "https://example.com/"
+    assert str(candidate.careers_url) == "https://example.teamtailor.com/jobs"
+    assert str(candidate.board_url) == "https://example.teamtailor.com/jobs"
+    assert candidate.ats_type == AtsType.TEAMTAILOR
+    assert candidate.ats_slug == "example"
+    assert candidate.confidence_score == 0.95
+
+
+def test_discovery_engine_homepage_seed_still_uses_careers_finder() -> None:
+    class FakeCareersFinder:
+        def __init__(self) -> None:
+            self.seen_urls: list[str] = []
+
+        def find_page(self, website_url: str) -> CareersPage:
+            self.seen_urls.append(website_url)
+            return CareersPage(url="https://jobs.lever.co/example", html="")
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            return ats_type == AtsType.LEVER and ats_slug == "example"
+
+    finder = FakeCareersFinder()
+    engine = CompanyDiscoveryEngine(
+        careers_finder=finder,
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidate = engine.discover_company(
+        SeedCompany(companyName="Homepage Example", websiteUrl="https://example.com")
+    )
+
+    assert finder.seen_urls == ["https://example.com/"]
+    assert str(candidate.website_url) == "https://example.com/"
+    assert candidate.ats_type == AtsType.LEVER
     assert candidate.confidence_score == 0.95
 
 

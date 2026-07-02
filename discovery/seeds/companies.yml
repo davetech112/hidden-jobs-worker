@@ -20,51 +20,71 @@
   websiteUrl: https://grafana.com
 
 # SmartRecruiters candidates
-- name: Bosch
+- companyName: Bosch
   websiteUrl: https://www.bosch.com
-- name: Visa
+  boardUrl: https://jobs.smartrecruiters.com/BoschGroup
+- companyName: Visa
   websiteUrl: https://www.visa.com
-- name: Ubisoft
+  boardUrl: https://jobs.smartrecruiters.com/Visa
+- companyName: Ubisoft
   websiteUrl: https://www.ubisoft.com
-- name: Skechers
+  boardUrl: https://jobs.smartrecruiters.com/Ubisoft2
+- companyName: Skechers
   websiteUrl: https://www.skechers.com
+  boardUrl: https://jobs.smartrecruiters.com/Skechers
 
 # Teamtailor candidates
-- name: Mentimeter
+- companyName: Mentimeter
   websiteUrl: https://www.mentimeter.com
-- name: Epidemic Sound
+  boardUrl: https://mentimeter.teamtailor.com/jobs
+- companyName: Epidemic Sound
   websiteUrl: https://www.epidemicsound.com
-- name: Pleo
+  boardUrl: https://epidemic-sound.teamtailor.com/jobs
+- companyName: Pleo
   websiteUrl: https://www.pleo.io
-- name: Storytel
+  boardUrl: https://pleo.teamtailor.com/jobs
+- companyName: Storytel
   websiteUrl: https://www.storytel.com
+  boardUrl: https://storytel.teamtailor.com/jobs
 
 # Recruitee candidates
-- name: Recruitee
+- companyName: Recruitee
   websiteUrl: https://recruitee.com
-- name: Mews
+  boardUrl: https://recruitee.recruitee.com
+- companyName: Mews
   websiteUrl: https://www.mews.com
-- name: Otrium
+  boardUrl: https://mews.recruitee.com
+- companyName: Otrium
   websiteUrl: https://otrium.com
-- name: Mollie
+  boardUrl: https://otrium.recruitee.com
+- companyName: Mollie
   websiteUrl: https://www.mollie.com
+  boardUrl: https://mollie.recruitee.com
 
 # Comeet candidates
-- name: monday.com
+- companyName: monday.com
   websiteUrl: https://monday.com
-- name: Fiverr
+  boardUrl: https://www.comeet.com/careers-api/2.0/company/monday/positions
+- companyName: Fiverr
   websiteUrl: https://www.fiverr.com
-- name: Similarweb
+  boardUrl: https://www.comeet.com/careers-api/2.0/company/fiverr/positions
+- companyName: Similarweb
   websiteUrl: https://www.similarweb.com
-- name: Taboola
+  boardUrl: https://www.comeet.com/careers-api/2.0/company/similarweb/positions
+- companyName: Taboola
   websiteUrl: https://www.taboola.com
+  boardUrl: https://www.comeet.com/careers-api/2.0/company/taboola/positions
 
 # Personio candidates
-- name: Personio
+- companyName: Personio
   websiteUrl: https://www.personio.com
-- name: GetYourGuide
+  boardUrl: https://personio.jobs.personio.com/xml
+- companyName: GetYourGuide
   websiteUrl: https://www.getyourguide.com
-- name: Raisin
+  boardUrl: https://getyourguide.jobs.personio.com/xml
+- companyName: Raisin
   websiteUrl: https://www.raisin.com
-- name: Freeletics
+  boardUrl: https://raisin.jobs.personio.com/xml
+- companyName: Freeletics
   websiteUrl: https://www.freeletics.com
+  boardUrl: https://freeletics.jobs.personio.com/xml

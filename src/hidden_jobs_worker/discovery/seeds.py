@@ -1,11 +1,15 @@
 from pathlib import Path
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, HttpUrl
 
 
 class SeedCompany(BaseModel):
-    name: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(validation_alias=AliasChoices("name", "companyName"))
     website_url: HttpUrl = Field(alias="websiteUrl")
+    careers_url: HttpUrl | None = Field(default=None, alias="careersUrl")
+    board_url: HttpUrl | None = Field(default=None, alias="boardUrl")
 
 
 def load_seed_companies(path: str | Path) -> list[SeedCompany]:
