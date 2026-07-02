@@ -1,5 +1,6 @@
 import httpx
 
+from hidden_jobs_worker.discovery.ats_detector import sanitize_ats_slug
 from hidden_jobs_worker.models import AtsType
 
 
@@ -8,6 +9,7 @@ class BoardVerifier:
         self._client = client or httpx.Client(timeout=timeout_seconds)
 
     def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+        ats_slug = sanitize_ats_slug(ats_slug)
         if not ats_slug:
             return False
         if ats_type == AtsType.GREENHOUSE:
@@ -47,6 +49,6 @@ class BoardVerifier:
     def _is_reachable(self, url: str) -> bool:
         try:
             response = self._client.get(url)
-        except httpx.HTTPError:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError):
             return False
         return 200 <= response.status_code < 400
