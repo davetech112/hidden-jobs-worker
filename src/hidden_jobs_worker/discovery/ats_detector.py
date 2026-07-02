@@ -11,6 +11,7 @@ class AtsDetection:
     ats_type: AtsType
     ats_slug: str | None = None
     matched_url: str | None = None
+    suspicious_reason: str | None = None
 
 
 class _LinkExtractor(HTMLParser):
@@ -41,6 +42,8 @@ def detect_ats(url: str | None = None, html: str | None = None) -> AtsDetection:
     for candidate_url in urls:
         detection = _detect_ats_from_url(candidate_url)
         if detection.ats_type == AtsType.UNKNOWN:
+            if detection.suspicious_reason:
+                fallback_detection = fallback_detection or detection
             continue
         if detection.ats_slug:
             return detection
@@ -107,10 +110,6 @@ def _detect_ats_from_url(url: str) -> AtsDetection:
             slug = _first_path_part(path_parts)
         return _detection(AtsType.PERSONIO, slug, url)
 
-    if host == "personio.com" or host.endswith(".personio.com"):
-        slug = host.split(".")[0] if host != "personio.com" else _first_path_part(path_parts)
-        return _detection(AtsType.PERSONIO, slug, url)
-
     return AtsDetection(AtsType.UNKNOWN)
 
 
@@ -123,7 +122,15 @@ def _extract_urls_from_text(text: str) -> list[str]:
 
 
 def _detection(ats_type: AtsType, slug: str | None, matched_url: str) -> AtsDetection:
-    return AtsDetection(ats_type, sanitize_ats_slug(slug), matched_url)
+    sanitized_slug = sanitize_ats_slug(slug)
+    if sanitized_slug and is_suspicious_ats_slug(sanitized_slug):
+        return AtsDetection(
+            AtsType.UNKNOWN,
+            None,
+            matched_url,
+            f"suspicious {ats_type.value} atsSlug rejected: {sanitized_slug}",
+        )
+    return AtsDetection(ats_type, sanitized_slug, matched_url)
 
 
 def sanitize_ats_slug(value: str | None) -> str | None:
@@ -143,3 +150,29 @@ def sanitize_ats_slug(value: str | None) -> str | None:
     if ".." in slug or slug.endswith("."):
         return None
     return slug
+
+
+SUSPICIOUS_ATS_SLUGS = {
+    "www",
+    "api",
+    "app",
+    "jobs",
+    "careers",
+    "career",
+    "hiring",
+    "apply",
+    "recruitment",
+    "ai-statement",
+    "privacy",
+    "legal",
+    "terms",
+    "cookie",
+    "static",
+    "assets",
+}
+
+
+def is_suspicious_ats_slug(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in SUSPICIOUS_ATS_SLUGS

@@ -157,6 +157,35 @@ def test_escaped_html_entity_slug_is_rejected() -> None:
     assert detection.ats_slug is None
 
 
+def test_personio_www_slug_is_downgraded() -> None:
+    detection = detect_ats("https://www.personio.com/careers")
+
+    assert detection.ats_type == AtsType.UNKNOWN
+    assert detection.ats_slug is None
+
+
+def test_recruitee_ai_statement_slug_is_downgraded() -> None:
+    detection = detect_ats("https://recruitee.com/ai-statement")
+
+    assert detection.ats_type == AtsType.UNKNOWN
+    assert detection.ats_slug is None
+    assert detection.suspicious_reason is not None
+
+
+def test_valid_recruitee_slug_remains_valid() -> None:
+    detection = detect_ats("https://example.recruitee.com/o/backend-engineer")
+
+    assert detection.ats_type == AtsType.RECRUITEE
+    assert detection.ats_slug == "example"
+
+
+def test_valid_personio_slug_remains_valid() -> None:
+    detection = detect_ats("https://example.jobs.personio.com/xml")
+
+    assert detection.ats_type == AtsType.PERSONIO
+    assert detection.ats_slug == "example"
+
+
 def test_detects_adapter_pack_1_urls() -> None:
     cases = [
         (
@@ -549,6 +578,53 @@ def test_discovery_engine_detects_ats_from_final_careers_url() -> None:
     assert candidate.confidence_score == 0.95
 
 
+def test_discovery_engine_downgrades_suspicious_recruitee_slug() -> None:
+    class FakeCareersFinder:
+        def find_page(self, website_url: str) -> CareersPage:
+            return CareersPage(url="https://recruitee.com/ai-statement", html="")
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            raise AssertionError("suspicious slug must not be verified")
+
+    engine = CompanyDiscoveryEngine(
+        careers_finder=FakeCareersFinder(),
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidate = engine.discover_company(
+        SeedCompany(name="Example", websiteUrl="https://example.com")
+    )
+
+    assert candidate.ats_type == AtsType.UNKNOWN
+    assert candidate.ats_slug is None
+    assert candidate.confidence_score == 0.1
+    assert any("suspicious" in note for note in candidate.discovery_notes)
+
+
+def test_discovery_engine_keeps_valid_personio_slug() -> None:
+    class FakeCareersFinder:
+        def find_page(self, website_url: str) -> CareersPage:
+            return CareersPage(url="https://example.jobs.personio.com/xml", html="")
+
+    class FakeBoardVerifier:
+        def verify(self, ats_type: AtsType, ats_slug: str | None) -> bool:
+            return ats_type == AtsType.PERSONIO and ats_slug == "example"
+
+    engine = CompanyDiscoveryEngine(
+        careers_finder=FakeCareersFinder(),
+        board_verifier=FakeBoardVerifier(),
+    )
+
+    candidate = engine.discover_company(
+        SeedCompany(name="Example", websiteUrl="https://example.com")
+    )
+
+    assert candidate.ats_type == AtsType.PERSONIO
+    assert candidate.ats_slug == "example"
+    assert candidate.confidence_score == 0.95
+
+
 def test_discovery_continues_after_one_failed_candidate(tmp_path) -> None:
     seed_file = tmp_path / "companies.yml"
     seed_file.write_text(
@@ -745,6 +821,20 @@ def test_discovery_submission_skips_unknown_ats_candidate() -> None:
 
     summary = cli._submit_discovery_candidates(
         [_candidate(ats_type="UNKNOWN", ats_slug=None)],
+        min_confidence=0.90,
+        registration_client=FakeRegistrationClient(),
+    )
+
+    assert summary == {"submitted": 0, "updated": 0, "ignored": 0, "skipped": 1, "failed": 0}
+
+
+def test_discovery_submission_skips_suspicious_slug_candidate() -> None:
+    class FakeRegistrationClient:
+        def submit_career_board(self, candidate: CompanyCandidate):
+            raise AssertionError("suspicious candidate must not submit")
+
+    summary = cli._submit_discovery_candidates(
+        [_candidate(ats_type="UNKNOWN", ats_slug=None, confidence_score=0.1)],
         min_confidence=0.90,
         registration_client=FakeRegistrationClient(),
     )
