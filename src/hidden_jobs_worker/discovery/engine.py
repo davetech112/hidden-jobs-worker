@@ -41,12 +41,23 @@ class CompanyDiscoveryEngine:
     def discover_company(self, seed: SeedCompany) -> CompanyCandidate:
         notes: list[str] = []
         website_url = str(seed.website_url)
-        careers_page = self._careers_finder.find_page(website_url)
-        careers_url = careers_page.url if careers_page else None
-        if careers_url:
-            notes.append(f"Careers page candidate found: {careers_url}")
+        direct_board_url = str(seed.board_url) if seed.board_url else None
+        direct_careers_url = str(seed.careers_url) if seed.careers_url else None
+        careers_page = None
+
+        if direct_board_url:
+            careers_url = direct_board_url
+            notes.append(f"Direct board URL provided: {direct_board_url}")
+        elif direct_careers_url:
+            careers_url = direct_careers_url
+            notes.append(f"Direct careers URL provided: {direct_careers_url}")
         else:
-            notes.append("No careers page candidate found")
+            careers_page = self._careers_finder.find_page(website_url)
+            careers_url = careers_page.url if careers_page else None
+            if careers_url:
+                notes.append(f"Careers page candidate found: {careers_url}")
+            else:
+                notes.append("No careers page candidate found")
 
         detection = detect_ats(
             careers_url or website_url,
